@@ -1,0 +1,17 @@
+[package]
+name = "tailor"
+version = "0.1.0"
+authors = ["Alexander Pavel <alex.pavel@coreos.com>"]
+
+[dependencies]
+github-rs = { git = "https://github.com/AlexNPavel/github-rs.git", branch = "issues_comments+collaborators" }
+serde = "*"
+serde_json = "*"
+serde_yaml = "*"
+regex = "*"
+iron = "*"
+router = "*"
+clap = "*"
+serde_derive = "*"
+persistent = "*"
+error-chain = "*"
