@@ -1,0 +1,17 @@
+access_token: "fill_me_in"
+
+repos:
+  - owner: the_owner
+    repo: the_repo
+    checks:
+      no_capitalize_summary: true
+      summary_scope: true
+      max_summary_length: 50
+      max_body_line_length: 72
+      requires_body: true
+      no_wip: true
+      no_fixup: true
+      no_squash: true
+      contains_bug_number: true # not yet implemented
+#      pr_title_regex: "^[^[A-Z]:\s^[A-Z]]{,50}$" # not yet implemented
+      files_requiring_license: [".rs"] # not yet implemented
