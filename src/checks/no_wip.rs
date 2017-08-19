@@ -28,7 +28,7 @@ impl Check for NoWip {
 
     fn verify(&self, checks: &Checks, commit_data: &CommitData) -> Result<()> {
         if let Some(no_wip) = checks.no_wip {
-            if no_wip && commit_data.summary.starts_with("wip") ||  commit_data.summary.starts_with("WIP") {
+            if no_wip && commit_data.summary.to_lowercase().starts_with("wip") {
                 return Err("WIP commits must be finished before merging".into());
             }
         }
