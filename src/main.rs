@@ -18,6 +18,8 @@ extern crate clap;
 extern crate error_chain;
 extern crate github_rs;
 extern crate iron;
+#[macro_use]
+extern crate nom;
 extern crate persistent;
 extern crate regex;
 extern crate router;
@@ -30,6 +32,7 @@ extern crate serde_yaml;
 mod checks;
 mod config;
 mod errors;
+mod expr;
 mod github;
 mod routes;
 
