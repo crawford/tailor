@@ -4,14 +4,15 @@ version = "0.1.0"
 authors = ["Alexander Pavel <alex.pavel@coreos.com>"]
 
 [dependencies]
+clap = "*"
+error-chain = "*"
 github-rs = { git = "https://github.com/AlexNPavel/github-rs.git", branch = "issues_comments+collaborators" }
+iron = "*"
+nom = { version = "*", features = ["nightly"] }
+persistent = "*"
+regex = "*"
+router = "*"
 serde = "*"
+serde_derive = "*"
 serde_json = "*"
 serde_yaml = "*"
-regex = "*"
-iron = "*"
-router = "*"
-clap = "*"
-serde_derive = "*"
-persistent = "*"
-error-chain = "*"
