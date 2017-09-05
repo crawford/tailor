@@ -21,7 +21,7 @@ use CommitStatus;
 use InitCheckStruct;
 use serde_json;
 use serde_json::Value;
-use github_handler::Commit;
+use github::Commit;
 use errors::*;
 
 pub fn set_status(commit_status: CommitStatus) -> Result<()> {

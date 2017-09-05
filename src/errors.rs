@@ -12,4 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod hook;
+use github_rs;
+use regex;
+use serde_json;
+
+error_chain!{
+    foreign_links {
+        JsonError(serde_json::error::Error);
+        GithubError(github_rs::errors::Error);
+        RegexError(regex::Error);
+    }
+}

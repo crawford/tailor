@@ -16,7 +16,7 @@ pub struct MaxBodyLineLength;
 
 use errors::*;
 use config::Checks;
-use github_handler::CommitData;
+use github::CommitData;
 use checks::Check;
 
 impl Check for MaxBodyLineLength {

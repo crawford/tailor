@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-extern crate serde_yaml;
+use errors::*;
 use std::fs::File;
 use std::io::Read;
-use errors::*;
+use serde_yaml;
 
 #[derive(Serialize, Deserialize)]
 pub struct Config {
