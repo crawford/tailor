@@ -12,18 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::io::Read;
-use iron::request::Request;
 use iron::prelude::*;
-use iron::typemap::Key;
 use iron::status;
 use persistent;
 use serde_json;
-use config;
-use std::sync::mpsc;
-use InitCheckStruct;
-
-use iron::response::Response;
+use std::io::Read;
+use worker;
 
 #[derive(Serialize, Deserialize)]
 struct Hook {
@@ -51,30 +45,12 @@ struct Owner {
     login: String,
 }
 
-#[derive(Copy, Clone)]
-pub struct Config;
-impl Key for Config {
-    type Value = config::Config;
-}
-
-#[derive(Copy, Clone)]
-pub struct AccessToken;
-impl Key for AccessToken {
-    type Value = String;
-}
-
-#[derive(Copy, Clone)]
-pub struct Tx;
-impl Key for Tx {
-    type Value = mpsc::Sender<InitCheckStruct>;
-}
-
 pub fn hook_respond(req: &mut Request) -> IronResult<Response> {
     let mut req_string = String::new();
-    if let Err(e) = req.body.read_to_string(&mut req_string) {
-        eprintln!("Failed to read request body => {}", e);
+    if let Err(err) = req.body.read_to_string(&mut req_string) {
+        eprintln!("Failed to read request body: {}", err);
         return Err(IronError::new(
-            e,
+            err,
             (status::InternalServerError, "Error reading request"),
         ));
     }
@@ -94,54 +70,69 @@ pub fn hook_respond(req: &mut Request) -> IronResult<Response> {
                 ));
             }
             let hook_action = ds_json.action;
+            if hook_action == "closed" {
+                return Ok(Response::with(
+                    (status::Ok, "Sent data to processing thread"),
+                ));
+            }
 
-
-            let config_req = req.get::<persistent::Read<Config>>().unwrap();
-            let access_token_req = req.get::<persistent::Read<AccessToken>>().unwrap();
-            let tx = req.get::<persistent::Write<Tx>>().unwrap();
-
-            let job_struct = InitCheckStruct {
-                owner: owner,
-                repo: repo,
-                number: number,
-                hook_action: hook_action,
-                config: config_req,
-                access_token: access_token_req,
+            let worker = req.get::<persistent::Write<worker::Worker>>().unwrap();
+            let tx_clone = match worker.lock() {
+                Ok(worker) => worker.get_sender(),
+                Err(err) => {
+                    return Ok(Response::with((
+                        status::InternalServerError,
+                        format!("Failed to lock mutex: {}", err),
+                    )));
+                }
             };
 
-            let tx_clone = {
-                let tx_lock = match tx.lock() {
-                    Ok(tx) => tx,
-                    Err(e) => {
-                        return Ok(Response::with((
-                            status::InternalServerError,
-                            format!("Failed to lock mutex => {}", e),
-                        )));
-                    }
-                };
-                tx_lock.clone()
-            };
+            if let Err(err) = tx_clone.send(worker::Job::Status(worker::StatusJob {
+                status: worker::Status {
+                    state: worker::State::Pending,
+                    description: "The pull request has been received".to_string(),
+                    context: "tailor".to_string(),
+                },
+                commit: worker::Commit {
+                    owner: owner.clone(),
+                    repo: repo.clone(),
+                    sha: "TODO ALEX".to_string(),
+                },
+            }))
+            {
+                return Ok(Response::with((
+                    status::InternalServerError,
+                    format!(
+                        "Failed to send struct to processing thread: {}",
+                        err
+                    ),
+                )));
+            }
 
-            match tx_clone.send(job_struct) {
+            match tx_clone.send(worker::Job::PullRequest(worker::PullRequestJob {
+                owner,
+                repo,
+                number,
+            })) {
                 Ok(()) => {
                         Ok(Response::with((status::Ok, "Sent data to processing thread")))
                     }
-                Err(e) => {
+                Err(err) => {
                     Ok(Response::with((
                         status::InternalServerError,
                         format!(
-                            "Failed to send struct to processing thread => {}",
-                            e
+                            "Failed to send struct to processing thread: {}",
+                            err
                         ),
                     )))
                 }
             }
         }
-        Err(e) => {
-            eprintln!("Failed to read json => {}", e);
+        Err(err) => {
+            eprintln!("Failed to read json: {}", err);
             Ok(Response::with((
                 status::InternalServerError,
-                format!("Failed to read input json => {}", e),
+                format!("Failed to read input json: {}", err),
             )))
         }
     }

@@ -12,21 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod set_status;
-
-extern crate github_rs;
-extern crate serde;
-extern crate serde_json;
-extern crate serde_yaml;
-
-use github_rs::client::Github;
-use serde_json::Value;
-use errors::*;
-use InitCheckStruct;
-use CommitStatusEnum::*;
-use CommitStatus;
-use std::sync::mpsc::Sender;
-use SetStatus;
 use checks::Check;
 use checks::max_body_line_length::MaxBodyLineLength;
 use checks::max_summary_length::MaxSummaryLength;
@@ -36,6 +21,12 @@ use checks::requires_body::RequiresBody;
 use checks::no_wip::NoWip;
 use checks::no_fixup::NoFixup;
 use checks::no_squash::NoSquash;
+use config;
+use errors::*;
+use github_rs::client::Github;
+use serde_json::{self, Value};
+use std::sync::mpsc::Sender;
+use worker;
 
 #[derive(Serialize, Deserialize)]
 struct Comment {
@@ -69,13 +60,14 @@ pub struct CommitData {
     pub body: Vec<String>,
 }
 
-pub fn run_checks(job_struct: &InitCheckStruct, tx: &Sender<SetStatus>) -> Result<()> {
+pub fn run_checks(
+    job_struct: &worker::PullRequestJob,
+    tx: &Sender<worker::Job>,
+    config: &config::Config,
+) -> Result<()> {
     let owner = &job_struct.owner;
     let repo = &job_struct.repo;
     let number = job_struct.number;
-    let config = job_struct.config.as_ref();
-    let access_token = &job_struct.access_token;
-
     let repo_config = match config.repos.iter().find(|curr_repo| {
         owner == &curr_repo.owner && repo == &curr_repo.repo
     }) {
@@ -87,7 +79,7 @@ pub fn run_checks(job_struct: &InitCheckStruct, tx: &Sender<SetStatus>) -> Resul
         }
     };
 
-    let client = Github::new(access_token.as_ref()).chain_err(
+    let client = Github::new(&config.access_token).chain_err(
         || "Failed to create new Github client",
     )?;
 
@@ -113,8 +105,8 @@ pub fn run_checks(job_struct: &InitCheckStruct, tx: &Sender<SetStatus>) -> Resul
                     .into(),
             );
         }
-        Err(e) => {
-            return Err(e.into());
+        Err(err) => {
+            return Err(err.into());
         }
     }
 
@@ -166,8 +158,8 @@ pub fn run_checks(job_struct: &InitCheckStruct, tx: &Sender<SetStatus>) -> Resul
         Ok((_, _, None)) => {
             return Err("Could not get PR commit data!".into());
         }
-        Err(e) => {
-            return Err(e.into());
+        Err(err) => {
+            return Err(err.into());
         }
     }
     let comments_arr: Vec<Comment> = serde_json::from_value(comments_json)?;
@@ -194,8 +186,8 @@ pub fn run_checks(job_struct: &InitCheckStruct, tx: &Sender<SetStatus>) -> Resul
                         println!("Could not get Collaborator data. User might not be collaborator");
                         continue;
                     }
-                    Err(e) => {
-                        return Err(e.into());
+                    Err(err) => {
+                        return Err(err.into());
                     }
                 };
                 if collaborator.permission == "admin" {
@@ -232,20 +224,20 @@ pub fn run_checks(job_struct: &InitCheckStruct, tx: &Sender<SetStatus>) -> Resul
             None => {
                 commit_failed = true;
                 last_commit_failed = true;
-                let status_struct = CommitStatus {
-                    owner: owner.clone(),
-                    repo: repo.clone(),
-                    sha: commit.sha.clone(),
-                    status: Failure,
-                    description: "Commit has no message".to_string(),
-                    access_token: access_token.clone(),
-                };
-                if let Err(e) = tx.send(SetStatus {
-                    check_struct: None,
-                    commit_status: Some(status_struct),
-                })
+                if let Err(err) = tx.send(worker::Job::Status(worker::StatusJob {
+                    status: worker::Status {
+                        state: worker::State::Failure,
+                        description: "Commit has no message".to_string(),
+                        context: "tailor".to_string(),
+                    },
+                    commit: worker::Commit {
+                        owner: owner.clone(),
+                        repo: repo.clone(),
+                        sha: commit.sha.clone(),
+                    },
+                }))
                 {
-                    eprintln!("Failed to send check status to status thread => {}", e);
+                    eprintln!("Failed to send check status to status thread: {}", err);
                 }
                 continue;
             }
@@ -257,22 +249,22 @@ pub fn run_checks(job_struct: &InitCheckStruct, tx: &Sender<SetStatus>) -> Resul
             if empty_line != "" {
                 commit_failed = true;
                 last_commit_failed = true;
-                let status_struct = CommitStatus {
-                    owner: owner.clone(),
-                    repo: repo.clone(),
-                    sha: commit.sha.clone(),
-                    status: Failure,
-                    description: "Failed to parse commit due
-                        to malformed commit message (text on second line)"
-                        .to_string(),
-                    access_token: access_token.clone(),
-                };
-                if let Err(e) = tx.send(SetStatus {
-                    check_struct: None,
-                    commit_status: Some(status_struct),
-                })
+                if let Err(err) = tx.send(worker::Job::Status(worker::StatusJob {
+                    status: worker::Status {
+                        state: worker::State::Failure,
+                        description: "Failed to parse commit due to
+                                malformed commit message (text on second line)"
+                            .to_string(),
+                        context: "tailor".to_string(),
+                    },
+                    commit: worker::Commit {
+                        owner: owner.clone(),
+                        repo: repo.clone(),
+                        sha: commit.sha.clone(),
+                    },
+                }))
                 {
-                    eprintln!("Failed to send check status to status thread => {}", e);
+                    eprintln!("Failed to send check status to status thread: {}", err);
                 }
                 continue;
             }
@@ -287,64 +279,64 @@ pub fn run_checks(job_struct: &InitCheckStruct, tx: &Sender<SetStatus>) -> Resul
         };
 
         for check in &checks_vec {
-            if let Err(e) = check.verify(&repo_config.checks, &commit_data) {
-                err_vec.push(e.to_string());
+            if let Err(err) = check.verify(&repo_config.checks, &commit_data) {
+                err_vec.push(err.to_string());
             }
         }
 
         if !err_vec.is_empty() {
             commit_failed = true;
             last_commit_failed = true;
-            let status_struct = CommitStatus {
-                owner: owner.clone(),
-                repo: repo.clone(),
-                sha: commit.sha.clone(),
-                status: Failure,
-                description: (err_vec.join("\n")),
-                access_token: access_token.clone(),
-            };
-            if let Err(e) = tx.send(SetStatus {
-                check_struct: None,
-                commit_status: Some(status_struct),
-            })
+            if let Err(err) = tx.send(worker::Job::Status(worker::StatusJob {
+                status: worker::Status {
+                    state: worker::State::Failure,
+                    description: err_vec.join("\n"),
+                    context: "tailor".to_string(),
+                },
+                commit: worker::Commit {
+                    owner: owner.clone(),
+                    repo: repo.clone(),
+                    sha: commit.sha.clone(),
+                },
+            }))
             {
-                eprintln!("Failed to send check status to status thread => {}", e);
+                eprintln!("Failed to send check status to status thread: {}", err);
             }
         } else {
             last_commit_failed = false;
-            let status_struct = CommitStatus {
-                owner: owner.clone(),
-                repo: repo.clone(),
-                sha: commit.sha.clone(),
-                status: Success,
-                description: "All checks passed".to_string(),
-                access_token: access_token.clone(),
-            };
-            if let Err(e) = tx.send(SetStatus {
-                check_struct: None,
-                commit_status: Some(status_struct),
-            })
+            if let Err(err) = tx.send(worker::Job::Status(worker::StatusJob {
+                status: worker::Status {
+                    state: worker::State::Success,
+                    description: "All checks passed".to_string(),
+                    context: "tailor".to_string(),
+                },
+                commit: worker::Commit {
+                    owner: owner.clone(),
+                    repo: repo.clone(),
+                    sha: commit.sha.clone(),
+                },
+            }))
             {
-                eprintln!("Failed to send check status to status thread => {}", e);
+                eprintln!("Failed to send check status to status thread: {}", err);
             }
         }
     }
     if commit_failed && !last_commit_failed {
         if let Some(last_commit) = last_commit {
-            let status_struct = CommitStatus {
-                owner: owner.clone(),
-                repo: repo.clone(),
-                sha: last_commit.sha.clone(),
-                status: Failure,
-                description: "A previous commit failed".to_string(),
-                access_token: access_token.clone(),
-            };
-            if let Err(e) = tx.send(SetStatus {
-                check_struct: None,
-                commit_status: Some(status_struct),
-            })
+            if let Err(err) = tx.send(worker::Job::Status(worker::StatusJob {
+                status: worker::Status {
+                    state: worker::State::Failure,
+                    description: "A previous commit failed".to_string(),
+                    context: "tailor".to_string(),
+                },
+                commit: worker::Commit {
+                    owner: owner.clone(),
+                    repo: repo.clone(),
+                    sha: last_commit.sha.clone(),
+                },
+            }))
             {
-                eprintln!("Failed to send check status to status thread => {}", e);
+                eprintln!("Failed to send check status to status thread: {}", err);
             }
         } else {
             eprintln!("Failed to mark last commmit as failed; last_commit == None");
