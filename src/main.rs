@@ -12,52 +12,34 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod config;
-mod github_handler;
-mod checks;
-mod routes;
-
-extern crate github_rs;
-extern crate serde;
-extern crate serde_json;
-extern crate serde_yaml;
-extern crate iron;
-extern crate persistent;
-extern crate router;
-#[macro_use]
-extern crate error_chain;
-
-#[macro_use]
-extern crate serde_derive;
-
 #[macro_use]
 extern crate clap;
+#[macro_use]
+extern crate error_chain;
+extern crate github_rs;
+extern crate iron;
+extern crate persistent;
+extern crate regex;
+extern crate router;
+extern crate serde;
+#[macro_use]
+extern crate serde_derive;
+extern crate serde_json;
+extern crate serde_yaml;
 
-// We'll put our errors in an `errors` module, and other modules in
-// this crate will `use errors::*;` to get access to everything
-// `error_chain!` creates.
-mod errors {
-    // handle json deserialization errors
-    use serde_json;
-    use github_rs;
+mod checks;
+mod config;
+mod errors;
+mod github;
+mod routes;
 
-    error_chain!{
-        foreign_links {
-            JsonError(serde_json::error::Error);
-            GithubError(github_rs::errors::Error);
-        }
-    }
-}
-
-use errors::*;
-use std::str;
-use iron::prelude::*;
 use clap::{Arg, App};
+use errors::*;
+use iron::prelude::*;
 use router::Router;
-use std::net::IpAddr;
-use std::str::FromStr;
-use std::thread;
+use std::str::{self, FromStr};
 use std::sync::{Arc, mpsc};
+use std::thread;
 
 pub enum CommitStatusEnum {
     Success,
@@ -94,8 +76,9 @@ quick_main!(run);
 fn run() -> Result<()> {
     let matches = App::new(crate_name!())
         .version(crate_version!())
+        .about(crate_description!())
         .arg(
-            Arg::with_name("address")
+            Arg::with_name("ADDRESS")
                 .short("a")
                 .long("address")
                 .takes_value(true)
@@ -103,12 +86,12 @@ fn run() -> Result<()> {
                 .default_value("0.0.0.0"),
         )
         .arg(
-            Arg::with_name("port")
+            Arg::with_name("PORT")
                 .short("p")
                 .long("port")
                 .takes_value(true)
-                .help("The port on which to listen")
-                .default_value("3000"),
+                .help("The port on which to bind")
+                .default_value("8080"),
         )
         .get_matches();
 
@@ -166,11 +149,11 @@ fn run() -> Result<()> {
         match job {
             Ok(job) => {
                 if let Some(check_struct) = job.check_struct {
-                    if let Err(e) = github_handler::set_status::set_pending(&check_struct) {
+                    if let Err(e) = github::set_status::set_pending(&check_struct) {
                         eprintln!("{}", e);
                     }
                 } else if let Some(commit_status) = job.commit_status {
-                    if let Err(e) = github_handler::set_status::set_status(commit_status) {
+                    if let Err(e) = github::set_status::set_status(commit_status) {
                         eprintln!("{}", e);
                     }
                 } else {
@@ -185,7 +168,7 @@ fn run() -> Result<()> {
         let job = rx_check.recv();
         match job {
             Ok(job) => {
-                if let Err(e) = github_handler::run_checks(&job, &tx_status) {
+                if let Err(e) = github::run_checks(&job, &tx_status) {
                     eprintln!("{}", e);
                 }
             }
@@ -193,28 +176,24 @@ fn run() -> Result<()> {
         }
     });
 
-    let mut router = Router::new();
-    router.post("/hook", routes::hook::hook_respond, "github_webhook");
 
     let config = config::get_config()?;
 
+    let mut router = Router::new();
+    router.post("/hook", routes::hook_respond, "github_webhook");
+
     let mut chain = Chain::new(router);
-    chain.link(persistent::Read::<routes::hook::AccessToken>::both(
+    chain.link(persistent::Read::<routes::AccessToken>::both(
         config.access_token.clone(),
     ));
-    chain.link(persistent::Read::<routes::hook::Config>::both(config));
-    chain.link(persistent::Write::<routes::hook::Tx>::both(tx_schedule));
+    chain.link(persistent::Read::<routes::Config>::both(config));
+    chain.link(persistent::Write::<routes::Tx>::both(tx_schedule));
 
-    let address = matches.value_of("address");
-    let port = matches.value_of("port");
-    if let (Some(address), Some(port)) = (address, port) {
-        let port = u16::from_str_radix(port, 10).chain_err(|| "Invalid port")?;
-        let address = IpAddr::from_str(address).chain_err(|| "Invalid address")?;
-        Iron::new(chain).http((address, port)).chain_err(
-            || "Could not start server",
-        )?;
-    } else {
-        eprintln!("Could not decode command line arguments");
-    }
+    let address = matches.value_of("ADDRESS").expect("address flag");
+    let port = u16::from_str(matches.value_of("port").expect("port flag"))
+        .expect("well-formed port number");
+    Iron::new(chain).http((address, port)).chain_err(
+        || "Could not start server",
+    )?;
     Ok(())
 }

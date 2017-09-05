@@ -23,7 +23,7 @@ pub mod no_squash;
 
 use errors::*;
 use config::Checks;
-use github_handler::CommitData;
+use github::CommitData;
 
 pub trait Check {
     fn name(&self) -> String;
