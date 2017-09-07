@@ -4,11 +4,12 @@ version = "0.1.0"
 authors = ["Alexander Pavel <alex.pavel@coreos.com>"]
 
 [dependencies]
+chrono = { version = "*", features = ["serde"] }
 clap = "*"
 error-chain = "*"
-github-rs = { git = "https://github.com/AlexNPavel/github-rs.git", branch = "issues_comments+collaborators" }
+github-rs = { git = "https://github.com/mgattozzi/github-rs.git" }
 iron = "*"
-nom = { version = "*", features = ["nightly"] }
+nom = "*"
 persistent = "*"
 regex = "*"
 router = "*"
