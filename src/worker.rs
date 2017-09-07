@@ -20,19 +20,34 @@ use iron;
 use std::sync::mpsc;
 use std::thread;
 
+#[derive(Clone)]
 pub struct Worker {
     tx: mpsc::Sender<Job>,
-    handle: thread::JoinHandle<()>,
 }
 
 impl Worker {
-    pub fn queue(&self, job: Job) -> Result<()> {
-        self.tx.send(job).chain_err(|| "Failed to queue job")
+    pub fn queue_pull_request(&self, job: PullRequestJob) -> Result<()> {
+        self.tx.send(Job::PullRequest(job)).chain_err(
+            || "Failed to queue pull request",
+        )
     }
 
-    pub fn get_sender(&self) -> mpsc::Sender<Job> {
-        self.tx.clone()
+    pub fn queue_status(&self, state: State, description: String, commit: Commit) -> Result<()> {
+        self.tx
+            .send(Job::Status(StatusJob {
+                status: Status {
+                    state: state,
+                    description: description,
+                    context: "tailor".to_string(),
+                },
+                commit,
+            }))
+            .chain_err(|| "Failed to queue status")
     }
+}
+
+impl iron::typemap::Key for Worker {
+    type Value = Worker;
 }
 
 pub enum Job {
@@ -49,6 +64,7 @@ pub struct PullRequestJob {
     pub owner: String,
     pub repo: String,
     pub number: usize,
+    pub head_sha: String,
 }
 
 #[derive(Serialize)]
@@ -60,9 +76,13 @@ pub struct Status {
 
 #[derive(Serialize)]
 pub enum State {
+    #[serde(rename = "success")]
     Success,
+    #[serde(rename = "pending")]
     Pending,
+    #[serde(rename = "failure")]
     Failure,
+    #[serde(rename = "error")]
     Error,
 }
 
@@ -72,33 +92,23 @@ pub struct Commit {
     pub sha: String,
 }
 
+#[derive(Deserialize)]
+pub struct Empty {}
+
 pub fn spawn(config: Config) -> Result<Worker> {
     let (tx, rx) = mpsc::channel::<Job>();
 
-    let tx_internal = tx.clone();
-    let handle = thread::Builder::new()
+    let worker = Worker { tx };
+    let worker_internal = worker.clone();
+    thread::Builder::new()
         .name("Status Worker".to_string())
         .spawn(move || {
             let client = client::Github::new(&config.access_token).expect("github client");
             loop {
                 match rx.recv() {
-                    Ok(Job::Status(job)) => {
-                        if let Err(err) = client
-                            .post(job.status)
-                            .repos()
-                            .owner(&job.commit.owner)
-                            .repo(&job.commit.repo)
-                            .statuses()
-                            .sha(&job.commit.sha)
-                            .execute()
-                        {
-                            eprintln!("Failed to set status: {}", err);
-                        }
-                    }
+                    Ok(Job::Status(job)) => process_status(&client, job),
                     Ok(Job::PullRequest(job)) => {
-                        if let Err(err) = github::run_checks(&job, &tx_internal, &config) {
-                            eprintln!("{}", err);
-                        }
+                        process_pull_request(&client, &config, &worker_internal, job)
                     }
                     Err(err) => eprintln!("Error receiving job: {}", err),
                 }
@@ -106,9 +116,67 @@ pub fn spawn(config: Config) -> Result<Worker> {
         })
         .chain_err(|| "Failed to start status worker")?;
 
-    Ok(Worker { tx, handle })
+    Ok(worker)
 }
 
-impl iron::typemap::Key for Worker {
-    type Value = Worker;
+fn process_status(client: &client::Github, job: StatusJob) {
+    if let Err(err) = client
+        .post(job.status)
+        .repos()
+        .owner(&job.commit.owner)
+        .repo(&job.commit.repo)
+        .statuses()
+        .sha(&job.commit.sha)
+        .execute::<Empty>()
+    {
+        eprintln!("Failed to set status: {}", err)
+    }
+}
+
+fn process_pull_request(
+    client: &client::Github,
+    config: &Config,
+    worker: &Worker,
+    job: PullRequestJob,
+) {
+    let (status, description) = match config.repos.iter().find(|curr_repo| {
+        &job.owner == &curr_repo.owner && &job.repo == &curr_repo.repo
+    }) {
+        Some(repo) => {
+            match github::validate_pull_request(&job, client, repo) {
+                Ok(failures) => {
+                    if failures.is_empty() {
+                        (State::Success, "All checks passed".to_string())
+                    } else {
+                        (State::Failure, failures.join("\n"))
+                    }
+                }
+                Err(err) => {
+                    eprintln!("Failed to evaluate rules: {:?}", err);
+                    (State::Error, format!("Failed to evaluate rules: {}", err))
+                }
+            }
+        }
+        None => (
+            State::Error,
+            format!(
+                r#"Could not find repo "{}/{}" in the config"#,
+                &job.owner,
+                &job.repo
+            ),
+        ),
+    };
+
+    if let Err(err) = worker.queue_status(
+        status,
+        description,
+        Commit {
+            owner: job.owner,
+            repo: job.repo,
+            sha: job.head_sha,
+        },
+    )
+    {
+        eprintln!("Failed to queue validation status: {}", err);
+    }
 }

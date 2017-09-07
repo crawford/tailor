@@ -12,46 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+pub mod types;
+
 use errors::*;
 use nom::{self, IResult};
 use std::str::FromStr;
-use std::collections::HashMap;
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum Operation {
-    Equal(Box<Expr>, Box<Expr>),
-    LessThan(Box<Expr>, Box<Expr>),
-    GreaterThan(Box<Expr>, Box<Expr>),
-
-    And(Box<Expr>, Box<Expr>),
-    Or(Box<Expr>, Box<Expr>),
-    Xor(Box<Expr>, Box<Expr>),
-    Not(Box<Expr>),
-
-    All(Box<Expr>, Box<Expr>),
-    Any(Box<Expr>, Box<Expr>),
-    Filter(Box<Expr>, Box<Expr>),
-    Map(Box<Expr>, Box<Expr>),
-    Length(Box<Expr>),
-
-    Test(Box<Expr>, Box<Expr>),
-    Context(String),
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum Value {
-    Numeral(usize),
-    Boolean(bool),
-    String(String),
-    List(Vec<Expr>),
-    Dictionary(HashMap<String, Value>),
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum Expr {
-    Value(Value),
-    Operation(Operation),
-}
+pub use self::types::*;
 
 #[derive(Debug, PartialEq)]
 enum PartialOperation {

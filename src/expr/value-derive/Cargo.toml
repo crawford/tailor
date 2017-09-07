@@ -1,0 +1,11 @@
+[package]
+name = "value-derive"
+version = "0.1.0"
+authors = ["Alex Crawford <alex.crawford@coreos.com>"]
+
+[lib]
+proc-macro = true
+
+[dependencies]
+quote = "*"
+syn = "*"

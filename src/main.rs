@@ -12,28 +12,31 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+extern crate chrono;
 #[macro_use]
 extern crate clap;
+#[macro_use]
+extern crate value_derive;
 #[macro_use]
 extern crate error_chain;
 extern crate github_rs;
 extern crate iron;
+#[macro_use]
 extern crate nom;
 extern crate persistent;
 extern crate regex;
 extern crate router;
-extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 extern crate serde_json;
 extern crate serde_yaml;
+extern crate urlencoded;
 
-mod checks;
 mod config;
 mod errors;
+mod expr;
 mod github;
 mod routes;
-mod rule;
 mod worker;
 
 use clap::{Arg, App};
@@ -80,8 +83,8 @@ fn run() -> Result<()> {
     let mut chain = Chain::new(router);
     chain.link(persistent::Write::<worker::Worker>::both(worker));
 
-    Iron::new(chain).http((address, port)).chain_err(
-        || "Could not start server",
-    )?;
-    Ok(())
+    Iron::new(chain)
+        .http((address, port))
+        .chain_err(|| "Could not start server")
+        .map(|_| ())
 }

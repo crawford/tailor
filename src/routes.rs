@@ -12,128 +12,125 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use errors::*;
 use iron::prelude::*;
 use iron::status;
 use persistent;
 use serde_json;
-use std::io::Read;
+use urlencoded::UrlEncodedBody;
 use worker;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 struct Hook {
     repository: Repository,
     action: String,
-    // for issue comments, we get an issue, for PR event, we get a pull_request. Data is identical
-    // though
-    issue: Option<Issue>,
-    pull_request: Option<Issue>,
+    pull_request: Option<PullRequest>,
 }
 
-#[derive(Serialize, Deserialize)]
-struct Issue {
+#[derive(Deserialize)]
+struct PullRequest {
     number: usize,
+    head: Commit,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
+struct Commit {
+    sha: String,
+}
+
+#[derive(Deserialize)]
 struct Repository {
     owner: Owner,
     name: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 struct Owner {
     login: String,
 }
 
+
+
+fn read_body(req: &mut Request) -> Result<String> {
+    req.get_ref::<UrlEncodedBody>()
+        .chain_err(|| "Failed to URL decode")?
+        .clone()
+        .remove("payload")
+        .ok_or("Failed to find payload")?
+        .pop()
+        .ok_or("Empty payload".into())
+}
+
 pub fn hook_respond(req: &mut Request) -> IronResult<Response> {
-    let mut req_string = String::new();
-    if let Err(err) = req.body.read_to_string(&mut req_string) {
-        eprintln!("Failed to read request body: {}", err);
-        return Err(IronError::new(
+    let payload: Hook = serde_json::from_str(&read_body(req).map_err(|err| {
+        IronError::new(
             err,
-            (status::InternalServerError, "Error reading request"),
-        ));
+            (status::InternalServerError, "Failed to read response"),
+        )
+    })?).map_err(|err| {
+        eprintln!("Failed to parse response body: {:?}", err);
+        IronError::new(err, (
+            status::InternalServerError,
+            "Failed to parse response body",
+        ))
+    })?;
+
+    let pull_request = match payload.pull_request {
+        Some(pull_request) => pull_request,
+        None => return Ok(Response::with((status::Ok, "Not a pull request"))),
+    };
+
+    if payload.action == "closed" {
+        return Ok(Response::with((status::Ok, "Ignoring closed pull request")));
     }
-    let ds_json: Result<Hook, serde_json::Error> = serde_json::from_str(&req_string);
-    match ds_json {
-        Ok(ds_json) => {
-            let owner = ds_json.repository.owner.login;
-            let repo = ds_json.repository.name;
-            let number: usize;
-            if let Some(issue) = ds_json.issue {
-                number = issue.number;
-            } else if let Some(pull_request) = ds_json.pull_request {
-                number = pull_request.number;
-            } else {
-                return Ok(Response::with(
-                    (status::Ok, "Not an issue comment or PR; ignoring"),
-                ));
-            }
-            let hook_action = ds_json.action;
-            if hook_action == "closed" {
-                return Ok(Response::with(
-                    (status::Ok, "Sent data to processing thread"),
-                ));
-            }
 
-            let worker = req.get::<persistent::Write<worker::Worker>>().unwrap();
-            let tx_clone = match worker.lock() {
-                Ok(worker) => worker.get_sender(),
-                Err(err) => {
-                    return Ok(Response::with((
-                        status::InternalServerError,
-                        format!("Failed to lock mutex: {}", err),
-                    )));
-                }
-            };
-
-            if let Err(err) = tx_clone.send(worker::Job::Status(worker::StatusJob {
-                status: worker::Status {
-                    state: worker::State::Pending,
-                    description: "The pull request has been received".to_string(),
-                    context: "tailor".to_string(),
-                },
-                commit: worker::Commit {
-                    owner: owner.clone(),
-                    repo: repo.clone(),
-                    sha: "TODO ALEX".to_string(),
-                },
-            }))
-            {
-                return Ok(Response::with((
-                    status::InternalServerError,
-                    format!(
-                        "Failed to send struct to processing thread: {}",
-                        err
-                    ),
-                )));
-            }
-
-            match tx_clone.send(worker::Job::PullRequest(worker::PullRequestJob {
-                owner,
-                repo,
-                number,
-            })) {
-                Ok(()) => {
-                        Ok(Response::with((status::Ok, "Sent data to processing thread")))
-                    }
-                Err(err) => {
-                    Ok(Response::with((
-                        status::InternalServerError,
-                        format!(
-                            "Failed to send struct to processing thread: {}",
-                            err
-                        ),
-                    )))
-                }
-            }
-        }
+    let w = req.get::<persistent::Write<worker::Worker>>().unwrap();
+    let worker = match w.lock() {
+        Ok(worker) => worker,
         Err(err) => {
-            eprintln!("Failed to read json: {}", err);
-            Ok(Response::with((
+            return Ok(Response::with((
                 status::InternalServerError,
-                format!("Failed to read input json: {}", err),
-            )))
+                format!("Failed to lock mutex: {}", err),
+            )));
         }
+    };
+
+    if let Err(err) = worker.queue_status(
+        worker::State::Pending,
+        "The pull request has been received".to_string(),
+        worker::Commit {
+            owner: payload.repository.owner.login.clone(),
+            repo: payload.repository.name.clone(),
+            sha: pull_request.head.sha.clone(),
+        },
+    )
+    {
+        return Ok(Response::with((
+            status::InternalServerError,
+            format!(
+                "Failed to send struct to processing thread: {}",
+                err
+            ),
+        )));
     }
+
+    if let Err(err) = worker.queue_pull_request(worker::PullRequestJob {
+        owner: payload.repository.owner.login,
+        repo: payload.repository.name,
+        number: pull_request.number,
+        head_sha: pull_request.head.sha,
+    })
+    {
+        return Ok(Response::with((
+            status::InternalServerError,
+            format!(
+                "Failed to send struct to processing thread: {}",
+                err
+            ),
+        )));
+    }
+
+    Ok(Response::with(
+        (status::Ok, "Sent data to processing thread"),
+    ))
 }

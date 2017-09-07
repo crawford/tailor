@@ -12,12 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod ast;
+pub mod ast;
 
 use errors::*;
 use regex::Regex;
 use self::ast::{Expr, Operation, Value};
-use std::collections::HashMap;
 
 macro_rules! expr {
     ( $expr:expr, $context:expr, $type:path  ) => {
@@ -32,7 +31,12 @@ macro_rules! expr {
 }
 
 pub fn eval(expression: &str, input: &Value) -> Result<bool> {
-    match eval_expr(ast::parse(expression)?, input)? {
+    match eval_expr(
+        ast::parse(expression).chain_err(
+            || "Failed to parse expression",
+        )?,
+        input,
+    ).chain_err(|| "Failed to evaluate expression")? {
         Value::Boolean(b) => Ok(b),
         _ => Err("Invalid result".into()),
     }
@@ -117,8 +121,10 @@ fn eval_expr(expr: Expr, context: &Value) -> Result<Value> {
             expr!(*a, context, Value::List).len(),
         )),
         Expr::Operation(Operation::Test(term, pattern)) => {
-            Ok(Value::Boolean(Regex::new(&expr!(*pattern, context, Value::String))?
-                .is_match(&expr!(*term, context, Value::String))))
+            Ok(Value::Boolean(
+                Regex::new(&expr!(*pattern, context, Value::String))?
+                    .is_match(&expr!(*term, context, Value::String)),
+            ))
         }
         Expr::Operation(Operation::Context(path)) => {
             let mut context = context;
@@ -158,7 +164,10 @@ mod test {
         assert_eq!(eval_pr("[true true false] all .").unwrap(), false);
         assert_eq!(eval_pr("[false true false] any .").unwrap(), true);
         assert_eq!(eval_pr("[false] any .").unwrap(), false);
-        assert_eq!(eval_pr("[false true false] filter . length = 1").unwrap(), true);
+        assert_eq!(
+            eval_pr("[false true false] filter . length = 1").unwrap(),
+            true
+        );
         assert_eq!(eval_pr("[false false] map(. not) all .").unwrap(), true);
         assert_eq!(eval_pr(".commits length = 2").unwrap(), true);
         assert_eq!(eval_pr(r#""hello" test "h""#).unwrap(), true);

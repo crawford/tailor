@@ -17,29 +17,24 @@ use std::fs::File;
 use std::io::Read;
 use serde_yaml;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct Config {
     pub access_token: String,
     pub repos: Vec<Repo>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct Repo {
     pub owner: String,
     pub repo: String,
-    pub checks: Checks,
+    pub rules: Vec<Rule>,
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct Checks {
-    pub no_capitalize_summary: Option<bool>,
-    pub max_summary_length: Option<usize>,
-    pub summary_scope: Option<bool>,
-    pub max_body_line_length: Option<usize>,
-    pub requires_body: Option<bool>,
-    pub no_wip: Option<bool>,
-    pub no_fixup: Option<bool>,
-    pub no_squash: Option<bool>,
+#[derive(Debug, Deserialize)]
+pub struct Rule {
+    pub name: String,
+    pub description: String,
+    pub expression: String,
 }
 
 pub fn get_config() -> Result<(Config)> {
