@@ -56,7 +56,7 @@ fn read_body(req: &mut Request) -> Result<String> {
         .remove("payload")
         .ok_or("Failed to find payload")?
         .pop()
-        .ok_or("Empty payload".into())
+        .ok_or_else(|| "Empty payload".into())
 }
 
 pub fn hook_respond(req: &mut Request) -> IronResult<Response> {

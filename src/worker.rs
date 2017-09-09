@@ -170,7 +170,7 @@ fn process_pull_request(
     debug!("Processing pull request {:?}", job);
 
     let (status, description) = match config.repos.iter().find(|curr_repo| {
-        &job.owner == &curr_repo.owner && &job.repo == &curr_repo.repo
+        job.owner == curr_repo.owner && job.repo == curr_repo.repo
     }) {
         Some(repo) => {
             match github::validate_pull_request(&job, client, repo) {

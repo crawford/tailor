@@ -93,8 +93,8 @@ pub fn validate_pull_request(
     client: &Github,
     repo: &config::Repo,
 ) -> Result<Vec<String>> {
-    let pr = fetch_pull_request(&client, &repo, job.number)?;
-    let exemptions = find_exemptions(&client, &repo, &pr)?;
+    let pr = fetch_pull_request(client, repo, job.number)?;
+    let exemptions = find_exemptions(client, repo, &pr)?;
 
     let mut failures = Vec::new();
     let input = pr.clone().into();
@@ -102,15 +102,16 @@ pub fn validate_pull_request(
         |rule| !exemptions.contains(&rule.name),
     )
     {
-        if !expr::eval(&rule.expression, &input).chain_err(|| {
+        let result = expr::eval(&rule.expression, &input).chain_err(|| {
             format!(
                 r#"Failed to run "{}" from "{}/{}""#,
                 rule.name,
                 repo.owner,
                 repo.repo
             )
-        })?
-        {
+        })?;
+
+        if !result {
             failures.push(format!("Failed {} ({})", rule.name, rule.description))
         }
     }
