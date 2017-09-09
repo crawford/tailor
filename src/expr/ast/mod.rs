@@ -180,11 +180,27 @@ named!(expr <&str, Expr>, ws!(
 ));
 
 pub fn parse(expression: &str) -> Result<Expr> {
+    debug!("Parsing expression: {}", expression);
     match expr(expression) {
-        IResult::Done("", expr) => Ok(expr),
-        IResult::Done(r, _) => Err(format!("input remaining: {}", r).into()),
-        IResult::Error(err) => Err(format!("error occurred: {}", err).into()),
-        IResult::Incomplete(n) => Err(format!("needed more: {:?}", n).into()),
+        IResult::Done("", expr) => {
+            trace!("Expression parsed as {:?}", expr);
+            Ok(expr)
+        }
+        IResult::Done(r, _) => {
+            warn!("Parsing finished with remaining characters: {}", r);
+            Err(format!("input remaining: {}", r).into())
+        }
+        IResult::Error(err) => {
+            warn!("Parsing error occured: {}", err);
+            Err(format!("error occurred: {}", err).into())
+        }
+        IResult::Incomplete(n) => {
+            warn!(
+                "Parsing finished prematurely. {:?} more characters expected.",
+                n
+            );
+            Err(format!("needed more: {:?}", n).into())
+        }
     }
 }
 

@@ -22,6 +22,9 @@ extern crate error_chain;
 extern crate github_rs;
 extern crate iron;
 #[macro_use]
+extern crate log;
+extern crate loggerv;
+#[macro_use]
 extern crate nom;
 extern crate persistent;
 extern crate regex;
@@ -48,7 +51,7 @@ use std::str::FromStr;
 quick_main!(run);
 
 fn run() -> Result<()> {
-    let matches = App::new(crate_name!())
+    let args = App::new(crate_name!())
         .version(crate_version!())
         .about(crate_description!())
         .arg(
@@ -67,12 +70,22 @@ fn run() -> Result<()> {
                 .help("The port on which to bind")
                 .default_value("8080"),
         )
+        .arg(
+            Arg::with_name("VERBOSITY")
+                .short("v")
+                .long("verbose")
+                .multiple(true)
+                .help("The level of verbosity"),
+        )
         .get_matches();
 
-    let address = matches.value_of("ADDRESS").expect("address flag");
-    let port = u16::from_str(matches.value_of("PORT").expect("port flag"))
+    loggerv::init_with_verbosity(args.occurrences_of("VERBOSITY")).unwrap();
+
+    let address = args.value_of("ADDRESS").expect("address flag");
+    let port = u16::from_str(args.value_of("PORT").expect("port flag"))
         .expect("well-formed port number");
 
+    debug!("Spawning worker thread");
     let worker = worker::spawn(config::get_config()?).chain_err(
         || "Failed to create status worker",
     )?;
@@ -83,6 +96,7 @@ fn run() -> Result<()> {
     let mut chain = Chain::new(router);
     chain.link(persistent::Write::<worker::Worker>::both(worker));
 
+    debug!("Starting web server");
     Iron::new(chain)
         .http((address, port))
         .chain_err(|| "Could not start server")
