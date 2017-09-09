@@ -25,12 +25,16 @@ macro_rules! expr {
             Expr::Operation(o) => eval_expr(Expr::Operation(o), $context)?,
         } {
             $type(v) => v,
-            _ => Err("Invalid type")?,
+            v => {
+                trace!("Invalid value ({:?}); expected {}", v, stringify!($type));
+                Err("Invalid type")?
+            }
         }
     };
 }
 
 pub fn eval(expression: &str, input: &Value) -> Result<bool> {
+    debug!("Evaluating expression: {}", expression);
     match eval_expr(
         ast::parse(expression).chain_err(
             || "Failed to parse expression",
@@ -38,12 +42,16 @@ pub fn eval(expression: &str, input: &Value) -> Result<bool> {
         input,
     ).chain_err(|| "Failed to evaluate expression")? {
         Value::Boolean(b) => Ok(b),
-        _ => Err("Invalid result".into()),
+        value => {
+            warn!("Expression evaluated to {:?}", value);
+            Err("Invalid result".into())
+        }
     }
 }
 
 fn eval_expr(expr: Expr, context: &Value) -> Result<Value> {
-    match expr {
+    trace!("Evaluating expression: {:?}", expr);
+    let result = match expr {
         Expr::Value(val) => Ok(val),
         Expr::Operation(Operation::Equal(a, b)) => Ok(Value::Boolean(
             eval_expr(*a, context)? ==
@@ -142,7 +150,9 @@ fn eval_expr(expr: Expr, context: &Value) -> Result<Value> {
             }
             Ok(context.clone())
         }
-    }
+    };
+    trace!("Expression result: {:?}", result);
+    result
 }
 
 #[cfg(test)]

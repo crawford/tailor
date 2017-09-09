@@ -11,6 +11,8 @@ error-chain = "*"
 #github-rs = { git = "https://github.com/mgattozzi/github-rs.git" }
 github-rs = { path = "/home/alex/code/crawford/github-rs" }
 iron = "*"
+log = "*"
+loggerv = "*"
 nom = "*"
 persistent = "*"
 regex = "*"

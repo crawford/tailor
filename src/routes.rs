@@ -20,36 +20,34 @@ use serde_json;
 use urlencoded::UrlEncodedBody;
 use worker;
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 struct Hook {
     repository: Repository,
     action: String,
     pull_request: Option<PullRequest>,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 struct PullRequest {
     number: usize,
     head: Commit,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 struct Commit {
     sha: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 struct Repository {
     owner: Owner,
     name: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 struct Owner {
     login: String,
 }
-
-
 
 fn read_body(req: &mut Request) -> Result<String> {
     req.get_ref::<UrlEncodedBody>()
@@ -63,24 +61,27 @@ fn read_body(req: &mut Request) -> Result<String> {
 
 pub fn hook_respond(req: &mut Request) -> IronResult<Response> {
     let payload: Hook = serde_json::from_str(&read_body(req).map_err(|err| {
-        IronError::new(
-            err,
-            (status::InternalServerError, "Failed to read response"),
-        )
+        error!("Failed to read GitHub request: {}", err);
+        IronError::new(err, (status::InternalServerError, "Failed to read request"))
     })?).map_err(|err| {
-        eprintln!("Failed to parse response body: {:?}", err);
+        error!("Failed to parse GitHub request: {}", err);
         IronError::new(err, (
             status::InternalServerError,
             "Failed to parse response body",
         ))
     })?;
 
+    info!("Received GitHub hook {:?}", payload);
     let pull_request = match payload.pull_request {
         Some(pull_request) => pull_request,
-        None => return Ok(Response::with((status::Ok, "Not a pull request"))),
+        None => {
+            info!("Received GitHub request for something other than a pull request; ignoring.");
+            return Ok(Response::with((status::Ok, "Not a pull request")));
+        }
     };
 
     if payload.action == "closed" {
+        debug!("Received GitHub request for closed pull request; ignoring.");
         return Ok(Response::with((status::Ok, "Ignoring closed pull request")));
     }
 
@@ -88,9 +89,10 @@ pub fn hook_respond(req: &mut Request) -> IronResult<Response> {
     let worker = match w.lock() {
         Ok(worker) => worker,
         Err(err) => {
+            error!("Failed to aquire worker.");
             return Ok(Response::with((
                 status::InternalServerError,
-                format!("Failed to lock mutex: {}", err),
+                format!("Failed to aquire worker: {}", err),
             )));
         }
     };
@@ -105,6 +107,7 @@ pub fn hook_respond(req: &mut Request) -> IronResult<Response> {
         },
     )
     {
+        error!("Failed to queue status: {}", err);
         return Ok(Response::with((
             status::InternalServerError,
             format!(
@@ -121,6 +124,7 @@ pub fn hook_respond(req: &mut Request) -> IronResult<Response> {
         head_sha: pull_request.head.sha,
     })
     {
+        error!("Failed to queue pull request: {}", err);
         return Ok(Response::with((
             status::InternalServerError,
             format!(
