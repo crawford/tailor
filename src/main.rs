@@ -12,64 +12,38 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+extern crate chrono;
 #[macro_use]
 extern crate clap;
+#[macro_use]
+extern crate value_derive;
 #[macro_use]
 extern crate error_chain;
 extern crate github_rs;
 extern crate iron;
+#[macro_use]
+extern crate nom;
 extern crate persistent;
 extern crate regex;
 extern crate router;
-extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 extern crate serde_json;
 extern crate serde_yaml;
+extern crate urlencoded;
 
-mod checks;
 mod config;
 mod errors;
+mod expr;
 mod github;
 mod routes;
+mod worker;
 
 use clap::{Arg, App};
 use errors::*;
 use iron::prelude::*;
 use router::Router;
-use std::str::{self, FromStr};
-use std::sync::{Arc, mpsc};
-use std::thread;
-
-pub enum CommitStatusEnum {
-    Success,
-    Pending,
-    Failure,
-    Error,
-}
-
-pub struct SetStatus {
-    pub check_struct: Option<InitCheckStruct>,
-    pub commit_status: Option<CommitStatus>,
-}
-
-pub struct CommitStatus {
-    pub owner: String,
-    pub repo: String,
-    pub sha: String,
-    pub status: CommitStatusEnum,
-    pub description: String,
-    pub access_token: Arc<String>,
-}
-
-pub struct InitCheckStruct {
-    pub owner: String,
-    pub repo: String,
-    pub number: usize,
-    pub hook_action: String,
-    pub config: Arc<config::Config>,
-    pub access_token: Arc<String>,
-}
+use std::str::FromStr;
 
 quick_main!(run);
 
@@ -95,105 +69,22 @@ fn run() -> Result<()> {
         )
         .get_matches();
 
-    // This channel handles interaction between the hook handler and scheduling thread
-    let (tx_schedule, rx_schedule) = mpsc::channel::<InitCheckStruct>();
-    // This channel handles communication between the scheduling and processing/check threads to the
-    // status thread
-    let (tx_status, rx_status) = mpsc::channel::<SetStatus>();
-    // This handles communication from the scheduling thread to the processing/check thread
-    let (tx_check, rx_check) = mpsc::channel::<InitCheckStruct>();
-    // Scheduling thread (there are 2 threads which need tx_status, so we'll clone it here)
-    let tx_status_clone = tx_status.clone();
-    thread::spawn(move || loop {
-        // The type must be specified for the `if job.hook_action` line to work
-        // Also, override errors::Result;
-        let job = rx_schedule.recv();
-        match job {
-            Ok(job) => {
-                // Don't do anything if the PR is just being closed
-                if job.hook_action == "closed" {
-                    continue;
-                }
-                // Set statuses to pending (and make copy of job)
-                let job_copy = InitCheckStruct {
-                    owner: job.owner.clone(),
-                    repo: job.repo.clone(),
-                    number: job.number,
-                    hook_action: job.hook_action.clone(),
-                    config: job.config.clone(),
-                    access_token: job.access_token.clone(),
-                };
-                if let Err(e) = tx_status_clone.send(SetStatus {
-                    check_struct: Some(job_copy),
-                    commit_status: None,
-                })
-                {
-                    eprintln!(
-                        "Failed to send status pending data to status thread => {}",
-                        e
-                    );
-                    continue;
-                }
-                // Run the checks
-                if let Err(e) = tx_check.send(job) {
-                    eprintln!("Failed to send job data to check thread => {}", e);
-                    continue;
-                };
-            }
-            Err(e) => eprintln!("Error getting job on schedule thread => {}", e),
-        }
-    });
-    // Status thread
-    thread::spawn(move || loop {
-        let job = rx_status.recv();
-        match job {
-            Ok(job) => {
-                if let Some(check_struct) = job.check_struct {
-                    if let Err(e) = github::set_status::set_pending(&check_struct) {
-                        eprintln!("{}", e);
-                    }
-                } else if let Some(commit_status) = job.commit_status {
-                    if let Err(e) = github::set_status::set_status(commit_status) {
-                        eprintln!("{}", e);
-                    }
-                } else {
-                    eprintln!("Invalid SetStatus struct");
-                }
-            }
-            Err(e) => eprintln!("Error getting job on status thread => {}", e),
-        }
-    });
-    // Processing/Check thread
-    thread::spawn(move || loop {
-        let job = rx_check.recv();
-        match job {
-            Ok(job) => {
-                if let Err(e) = github::run_checks(&job, &tx_status) {
-                    eprintln!("{}", e);
-                }
-            }
-            Err(e) => eprintln!("Error getting job on check thread => {}", e),
-        }
-    });
+    let address = matches.value_of("ADDRESS").expect("address flag");
+    let port = u16::from_str(matches.value_of("PORT").expect("port flag"))
+        .expect("well-formed port number");
 
-
-    let config = config::get_config()?;
+    let worker = worker::spawn(config::get_config()?).chain_err(
+        || "Failed to create status worker",
+    )?;
 
     let mut router = Router::new();
     router.post("/hook", routes::hook_respond, "github_webhook");
 
     let mut chain = Chain::new(router);
-    chain.link(persistent::Read::<routes::AccessToken>::both(
-        config.access_token.clone(),
-    ));
-    chain.link(persistent::Read::<routes::Config>::both(config));
-    chain.link(persistent::Write::<routes::Tx>::both(tx_schedule));
+    chain.link(persistent::Write::<worker::Worker>::both(worker));
 
-    let address = matches.value_of("ADDRESS").expect("address flag");
-    let port = u16::from_str(matches.value_of("port").expect("port flag"))
-        .expect("well-formed port number");
-    Iron::new(chain).http((address, port)).chain_err(
-        || "Could not start server",
-    )?;
-    Ok(())
+    Iron::new(chain)
+        .http((address, port))
+        .chain_err(|| "Could not start server")
+        .map(|_| ())
 }

@@ -4,14 +4,19 @@ version = "0.1.0"
 authors = ["Alexander Pavel <alex.pavel@coreos.com>"]
 
 [dependencies]
-github-rs = { git = "https://github.com/AlexNPavel/github-rs.git", branch = "issues_comments+collaborators" }
+chrono = { version = "*", features = ["serde"] }
+clap = "*"
+value-derive = { path = "src/expr/value-derive" }
+error-chain = "*"
+#github-rs = { git = "https://github.com/mgattozzi/github-rs.git" }
+github-rs = { path = "/home/alex/code/crawford/github-rs" }
+iron = "*"
+nom = "*"
+persistent = "*"
+regex = "*"
+router = "*"
 serde = "*"
+serde_derive = "*"
 serde_json = "*"
 serde_yaml = "*"
-regex = "*"
-iron = "*"
-router = "*"
-clap = "*"
-serde_derive = "*"
-persistent = "*"
-error-chain = "*"
+urlencoded = "*"
