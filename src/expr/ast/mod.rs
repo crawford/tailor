@@ -86,10 +86,20 @@ named!(string <&str, Expr>,
     map!(
         delimited!(
             char!('"'),
-            flat_map!(call!(nom::alpha), parse_to!(String)),
+            fold_many0!(
+                alt!(
+                    map!(tag!(r#"\""#), |_| r#"""#) |
+                    map!(tag!(r#"\\"#), |_| r#"\"#) |
+                    is_not!(r#""\"#)
+                ),
+                String::new(),
+                |acc: String, s: &str| {
+                    acc + s
+                }
+            ),
             char!('"')
         ),
-        |p| { Expr::Value(Value::String(p)) }
+        |s| { Expr::Value(Value::String(s.to_string())) }
     )
 );
 
@@ -258,6 +268,18 @@ mod test {
                     Expr::Value(Value::Boolean(true)),
                 ])),
             )
+        );
+        assert_eq!(
+            value(r#""""#),
+            IResult::Done("", Expr::Value(Value::String(String::new())))
+        );
+        assert_eq!(
+            value(r#""simple string""#),
+            IResult::Done("", Expr::Value(Value::String("simple string".to_string())))
+        );
+        assert_eq!(
+            value(r#""^[A-Za-z\":\\]{,100}$""#),
+            IResult::Done("", Expr::Value(Value::String(r#"^[A-Za-z":\]{,100}$"#.to_string())))
         );
     }
 
