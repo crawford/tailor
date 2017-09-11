@@ -157,6 +157,7 @@ fn eval_expr(expr: Expr, context: &Value) -> Result<Value> {
 
 #[cfg(test)]
 mod test {
+    use std::collections::HashMap;
     use super::*;
 
     #[test]
