@@ -57,50 +57,75 @@ enum InfixOperator {
     Test,
 }
 
-fn is_context(c: char) -> bool {
-    c.is_alphabetic() || c == '.'
-}
-
-named!(value <&str, Expr>, ws!(
+named!(boolean <&str, Expr>,
     alt!(
         tag!("true")  => { |_| Expr::Value(Value::Boolean(true))  } |
-        tag!("false") => { |_| Expr::Value(Value::Boolean(false)) } |
-        map!(
-            flat_map!(call!(nom::digit), parse_to!(usize)),
-            |n| { Expr::Value(Value::Numeral(n)) }
-        ) |
-        map!(
-            delimited!(
-                char!('['),
-                many0!(value),
-                char!(']')
-            ),
-            |l| { Expr::Value(Value::List(l)) }
-        ) |
-        map!(
-            delimited!(
-                char!('"'),
-                flat_map!(call!(nom::alpha), parse_to!(String)),
-                char!('"')
-            ),
-            |p| { Expr::Value(Value::String(p)) }
-        ) |
-        map!(
-            map_res!(
-                preceded!(
-                    char!('.'),
-                    take_while!(is_context)
-                ),
-                FromStr::from_str
-            ),
-            |s: String| { Expr::Operation(Operation::Context(s)) }
-        ) |
-        delimited!(
-            char!('('),
-            expr,
-            char!(')')
-        )
+        tag!("false") => { |_| Expr::Value(Value::Boolean(false)) }
     )
+);
+
+named!(numeral <&str, Expr>,
+    map!(
+        flat_map!(call!(nom::digit), parse_to!(usize)),
+        |n| { Expr::Value(Value::Numeral(n)) }
+    )
+);
+
+named!(list <&str, Expr>,
+    map!(
+        delimited!(
+            char!('['),
+            many0!(value),
+            char!(']')
+        ),
+        |l| { Expr::Value(Value::List(l)) }
+    )
+);
+
+named!(string <&str, Expr>,
+    map!(
+        delimited!(
+            char!('"'),
+            fold_many0!(
+                alt!(
+                    map!(tag!(r#"\""#), |_| r#"""#) |
+                    map!(tag!(r#"\\"#), |_| r#"\"#) |
+                    is_not!(r#""\"#)
+                ),
+                String::new(),
+                |acc: String, s: &str| {
+                    acc + s
+                }
+            ),
+            char!('"')
+        ),
+        |s| { Expr::Value(Value::String(s.to_string())) }
+    )
+);
+
+named!(context <&str, Expr>,
+    map!(
+        map_res!(
+            preceded!(
+                char!('.'),
+                take_while!(|c: char| { c.is_alphabetic() || c == '.' })
+            ),
+            FromStr::from_str
+        ),
+        |s: String| { Expr::Operation(Operation::Context(s)) }
+    )
+);
+
+named!(nested <&str, Expr>,
+    delimited!(
+        char!('('),
+        expr,
+        char!(')')
+    )
+);
+
+named!(value <&str, Expr>, ws!(
+    alt!(boolean | numeral | list | string | context | nested)
 ));
 
 named!(operation0 <&str, PartialOperation>, ws!(
@@ -243,6 +268,18 @@ mod test {
                     Expr::Value(Value::Boolean(true)),
                 ])),
             )
+        );
+        assert_eq!(
+            value(r#""""#),
+            IResult::Done("", Expr::Value(Value::String(String::new())))
+        );
+        assert_eq!(
+            value(r#""simple string""#),
+            IResult::Done("", Expr::Value(Value::String("simple string".to_string())))
+        );
+        assert_eq!(
+            value(r#""^[A-Za-z\":\\]{,100}$""#),
+            IResult::Done("", Expr::Value(Value::String(r#"^[A-Za-z":\]{,100}$"#.to_string())))
         );
     }
 
