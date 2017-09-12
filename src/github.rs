@@ -30,38 +30,12 @@ struct PullRequest {
     comments: Vec<Comment>,
 }
 
-#[derive(Deserialize)]
-struct RawPullRequest {
-    user: User,
-    title: String,
-    body: String,
-}
-
-#[derive(Clone, Deserialize, Value)]
-struct User {
-    login: String,
-}
-
-#[derive(Clone, Deserialize, Value)]
-struct Commit {
-    sha: String,
-    commit: CommitBody,
-    author: User,
-    committer: User,
-}
-
-#[derive(Clone, Deserialize, Value)]
-struct CommitBody {
-    author: Author,
-    committer: Author,
-    message: String,
-}
-
 #[derive(Clone, Deserialize, Value)]
 struct Author {
     name: String,
     email: String,
     date: DateTime<Utc>,
+    github_login: Option<String>,
 }
 
 #[derive(Clone, Deserialize, Value)]
@@ -69,6 +43,41 @@ struct Comment {
     user: User,
     body: String,
     created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Value)]
+struct Commit {
+    sha: String,
+    author: Author,
+    committer: Author,
+    message: String,
+}
+
+#[derive(Clone, Deserialize, Value)]
+struct User {
+    login: String,
+}
+
+#[derive(Deserialize)]
+struct RawPullRequest {
+    user: User,
+    title: String,
+    body: String,
+}
+
+#[derive(Clone, Deserialize)]
+struct RawCommit {
+    sha: String,
+    commit: RawCommitBody,
+    author: User,
+    committer: User,
+}
+
+#[derive(Clone, Deserialize)]
+struct RawCommitBody {
+    author: Author,
+    committer: Author,
+    message: String,
 }
 
 #[derive(Deserialize)]
@@ -165,23 +174,46 @@ fn fetch_pull_request(client: &Github, repo: &config::Repo, number: usize) -> Re
         Err(err) => bail!(err),
     };
 
-    let commits: Vec<Commit> = match client
-        .get()
-        .repos()
-        .owner(&repo.owner)
-        .repo(&repo.repo)
-        .pulls()
-        .number(&number.to_string())
-        .commits()
-        .execute() {
-        Ok((_, _, Some(json))) => json,
-        Ok((_, status, _)) => {
-            bail!(format!(
-                "Could not get pull request commits: HTTP {}",
-                status
-            ))
-        }
-        Err(err) => bail!(err),
+    let commits = {
+        let raw_commits: Vec<RawCommit> = match client
+            .get()
+            .repos()
+            .owner(&repo.owner)
+            .repo(&repo.repo)
+            .pulls()
+            .number(&number.to_string())
+            .commits()
+            .execute() {
+            Ok((_, _, Some(json))) => json,
+            Ok((_, status, _)) => {
+                bail!(format!(
+                    "Could not get pull request commits: HTTP {}",
+                    status
+                ))
+            }
+            Err(err) => bail!(err),
+        };
+        raw_commits
+            .into_iter()
+            .map(|c: RawCommit| {
+                Commit {
+                    sha: c.sha,
+                    author: Author {
+                        name: c.commit.author.name,
+                        email: c.commit.author.email,
+                        date: c.commit.author.date,
+                        github_login: Some(c.author.login),
+                    },
+                    committer: Author {
+                        name: c.commit.committer.name,
+                        email: c.commit.committer.email,
+                        date: c.commit.committer.date,
+                        github_login: Some(c.committer.login),
+                    },
+                    message: c.commit.message,
+                }
+            })
+            .collect()
     };
 
     let comments: Vec<Comment> = match client
@@ -211,27 +243,3 @@ fn fetch_pull_request(client: &Github, repo: &config::Repo, number: usize) -> Re
         comments,
     })
 }
-
-/*
-#[derive(Debug, Deserialize)]
-struct GithubErrorResponse {
-    message: String,
-    errors: Vec<GithubError>,
-}
-
-#[derive(Debug, Deserialize)]
-struct GithubError{
-    resource: String,
-    code: String,
-    field: String,
-    message: String,
-}
-
-Ok((_, StatusCode::Created, _)) => Ok(()),
-Ok((_, _, Some(res))) => match serde_json::from_value::<GithubErrorResponse>(res) {
-    Ok(error) => Err(format!("Received error from API: {:?}", error)),
-    Err(err) => Err(format!("Failed to parse error response: {}", err)),
-},
-Ok((_, _, None)) => Err("Empty error response received".to_string()),
-Err(err) => Err(format!("Failed to send request: {}", err)),
-*/
