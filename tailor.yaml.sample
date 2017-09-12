@@ -7,4 +7,4 @@ repos:
       - name: commit title
         description: all commit titles are less than or equal to 50 characters
         expression: |-
-          .commits all(.commit.message test "^[a-z 0-9:-]{,50}$")
+          .commits all(.message test "^[a-z 0-9:-]{,50}$")

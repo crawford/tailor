@@ -57,6 +57,15 @@ impl From<String> for Value {
     }
 }
 
+impl From<Option<String>> for Value {
+    fn from(s: Option<String>) -> Self {
+        match s {
+            Some(s) => s.into(),
+            None => String::new().into(),
+        }
+    }
+}
+
 impl From<DateTime<Utc>> for Value {
     fn from(t: DateTime<Utc>) -> Self {
         Value::String(t.to_rfc3339())
