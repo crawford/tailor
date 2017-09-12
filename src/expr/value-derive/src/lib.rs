@@ -19,40 +19,55 @@ extern crate syn;
 
 use proc_macro::TokenStream;
 
-#[proc_macro_derive(Value)]
+#[proc_macro_derive(Value, attributes(value))]
 pub fn value(input: TokenStream) -> TokenStream {
     let ast = syn::parse_derive_input(&input.to_string()).unwrap();
     let name = ast.ident;
 
-    let body = match ast.body {
-        syn::Body::Struct(syn::VariantData::Struct(fields)) => {
-            let inserts: Vec<quote::Tokens> = fields
-                .iter()
-                .map(|field| {
+    let body = if let syn::Body::Struct(syn::VariantData::Struct(fields)) = ast.body {
+        let inserts: Vec<quote::Tokens> = fields
+            .iter()
+            .filter_map(|field| {
+                let hidden = field.attrs.iter().any(|attr| match attr.value {
+                    syn::MetaItem::List(ref ident, ref values) if ident == "value" => {
+                        values.into_iter().any(|value| match value {
+                            &syn::NestedMetaItem::MetaItem(syn::MetaItem::Word(ref ident)) => {
+                                ident == "hidden"
+                            }
+                            _ => false,
+                        })
+                    }
+                    _ => false,
+                });
+
+                if hidden {
+                    None
+                } else {
                     let ident = field.ident.as_ref().expect(
                         "Value cannot be derived from tuple struct",
                     );
-                    quote! {
-					map.insert(stringify!(#ident).into(), s.#ident.into());
-				}
-                })
-                .collect();
+                    Some(quote! {
+                        map.insert(stringify!(#ident).into(), s.#ident.into());
+                    })
+                }
+            })
+            .collect();
 
-            quote! {
-				let mut map = ::std::collections::HashMap::new();
-				#(#inserts);*
-				Value::Dictionary(map)
-			}
+        quote! {
+            let mut map = ::std::collections::HashMap::new();
+            #(#inserts);*
+            Value::Dictionary(map)
         }
-        _ => panic!("Value can only be derived from a struct"),
+    } else {
+        panic!("Value can only be derived from a struct")
     };
 
     (quote! {
-		impl From<#name> for Value {
-			fn from(s: #name) -> Self {
-				#body
-			}
-		}
-	}).parse()
+        impl From<#name> for Value {
+            fn from(s: #name) -> Self {
+                #body
+            }
+        }
+    }).parse()
         .unwrap()
 }
