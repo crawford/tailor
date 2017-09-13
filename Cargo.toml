@@ -1,7 +1,7 @@
 [package]
 name = "tailor"
 version = "0.1.0"
-authors = ["Alexander Pavel <alex.pavel@coreos.com>"]
+authors = ["Alex Crawford <alex.crawford@coreos.com>", "Alexander Pavel <alex.pavel@coreos.com>"]
 
 [dependencies]
 base64 = "*"
