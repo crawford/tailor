@@ -9,7 +9,7 @@ chrono = { version = "*", features = ["serde"] }
 clap = "*"
 value-derive = { path = "src/expr/value-derive" }
 error-chain = "*"
-github-rs = { git = "https://github.com/mgattozzi/github-rs.git" }
+github-rs = { git = "https://github.com/crawford/github-rs", branch = "contents" }
 iron = "*"
 log = "*"
 loggerv = "*"
