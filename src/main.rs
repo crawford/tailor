@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+extern crate base64;
 extern crate chrono;
 #[macro_use]
 extern crate clap;
@@ -47,6 +48,7 @@ use errors::*;
 use iron::prelude::*;
 use router::Router;
 use std::str::FromStr;
+use std::process;
 
 quick_main!(run);
 
@@ -71,6 +73,14 @@ fn run() -> Result<()> {
                 .default_value("8080"),
         )
         .arg(
+            Arg::with_name("TOKEN")
+                .short("t")
+                .long("token")
+                .takes_value(true)
+                .required(true)
+                .help("The GitHub access token to use for requests"),
+        )
+        .arg(
             Arg::with_name("VERBOSITY")
                 .short("v")
                 .long("verbose")
@@ -82,13 +92,17 @@ fn run() -> Result<()> {
     loggerv::init_with_verbosity(args.occurrences_of("VERBOSITY")).unwrap();
 
     let address = args.value_of("ADDRESS").expect("address flag");
-    let port = u16::from_str(args.value_of("PORT").expect("port flag"))
-        .expect("well-formed port number");
+    let port = match u16::from_str(args.value_of("PORT").expect("port flag")) {
+        Ok(port) => port,
+        Err(err) => {
+            eprintln!("Failed to parse port: {}", err);
+            process::exit(2)
+        }
+    };
 
     debug!("Spawning worker thread");
-    let worker = worker::spawn(config::get_config()?).chain_err(
-        || "Failed to create status worker",
-    )?;
+    let worker = worker::spawn(args.value_of("TOKEN").expect("token").to_string())
+        .chain_err(|| "Failed to create status worker")?;
 
     let mut router = Router::new();
     router.post("/hook", routes::hook_respond, "github_webhook");
