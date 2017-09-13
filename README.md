@@ -24,16 +24,16 @@ rules:
 
     # The expression describes the rule itself. Refer to the language
     # documentation for an overview of the available functionality.
-    expression:  .commits all(.message test "^[a-z 0-9:-]{0,50}$")
+    expression:  .commits all(.message test "^.{0,50}$")
 ```
 
-Each of the rules are run on the entire pull request (the [root context](root-context)). They are run independently and cannot influence one another. Often times, it is useful to use `.commits all` to run an expression on each of the commits in the pull request, requiring all of them to comply. This is detailed further in the [Expressions section](expressions). The rule expression must result in a boolean value, `true` indicating a success and `false` a failure.
+Each of the rules are run on the entire pull request (the [root context](README.md#root-context)). They are run independently and cannot influence one another. Often times, it is useful to use `.commits all` to run an expression on each of the commits in the pull request, requiring all of them to comply. This is detailed further in the [Expressions section](README.md#expressions). The rule expression must result in a boolean value, `true` indicating a success and `false` a failure.
 
 #### Expressions ####
 
 Expressions are made up of a series of infix operators detailed below. Almost all operators have an input value (on the left) and most have an argument value (on the right). Expressions are evaluated from left to right, which the result of the previous operator feeding into the next. Parenthesis can be used to evaluate a contained expression before its surroundings.
 
-The only operator which doesn't take an input is the context operator (`.`). The result of this operation is the current context. It can be further limited by using a specifier (e.g. `.commits`). Since the context operator is the only operator which doesn't take an input, all expressions must begin with it.
+The only operator which doesn't take an input is the context operator (`.`). The result of this operation is the current context. It can be further limited by using a specifier (e.g. `.commits`) if the context is a dictionary. Since the context operator is the only operator which doesn't take an input, all expressions must begin with it.
 
 It might be helpful to break down a few examples.
 
@@ -89,11 +89,11 @@ There are a few different types of values that can be used in Tailor:
   - boolean - `true` or `false`
   - string - A sequence of characters delimited by double-quotes (e.g. `"this is a string"`). Double-quotes and backslashes can be escaped with a backslash so they can be included in the string (e.g. `"Escaped \"quotes\""`)
   - list - A sequence of values delimited by brackets (e.g. `[1 2 3]`)
-  - dictionary - A mapping between strings (the key) and values (the value). These cannot be created in expressions.
+  - dictionary - A mapping between strings (the key) and values (the value). These cannot be created in expressions so they are only useful for context specifiers.
 
 #### Root Context ####
 
-The root context is the initial input into the rule expression. It is always a dictionary of values, derived from the pull request, and is of the following structure. Dictionaries are denoted by indentation, lists are denoted with brackets, and all leaf members are strings.
+The root context is the initial input (a dictionary) into the rule expression. It is always a dictionary of values, derived from the pull request, and is of the following structure. Dictionaries are denoted by indentation, lists are denoted with brackets, and all leaf members are strings.
 
 ```
 .
@@ -123,7 +123,7 @@ The root context is the initial input into the rule expression. It is always a d
 
 ### Admin Commands ###
 
-In some cases, it may be necessary to grant an exemption to the rules. Repository admins can specify exemptions by commenting on the pull request with `tailor disable <rule name>` to disable a particular rule or `tailor disable all` to disable all rules.
+In some cases, it may be necessary to grant an exemption to the rules. Repository admins can specify exemptions by commenting on the pull request with `tailor disable <rule name>` to disable a particular rule or `tailor disable all` to disable all rules. Exemptions can be removed by deleting the comment.
 
 ## Setup ##
 
