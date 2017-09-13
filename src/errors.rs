@@ -12,14 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use base64;
 use github_rs;
 use regex;
 use serde_json;
+use serde_yaml;
 
 error_chain!{
     foreign_links {
-        JsonError(serde_json::error::Error);
+        Base64(base64::DecodeError);
         GithubError(github_rs::errors::Error);
+        JsonError(serde_json::error::Error);
         RegexError(regex::Error);
+        YamlError(serde_yaml::Error);
     }
 }

@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use config::Config;
 use errors::*;
 use github;
 use github_rs::client;
@@ -117,7 +116,7 @@ impl fmt::Debug for Commit {
 #[derive(Deserialize)]
 pub struct Empty {}
 
-pub fn spawn(config: Config) -> Result<Worker> {
+pub fn spawn(access_token: String) -> Result<Worker> {
     let (tx, rx) = mpsc::channel::<Job>();
 
     let worker = Worker { tx };
@@ -125,12 +124,12 @@ pub fn spawn(config: Config) -> Result<Worker> {
     thread::Builder::new()
         .name("Status Worker".to_string())
         .spawn(move || {
-            let client = client::Github::new(&config.access_token).expect("github client");
+            let client = client::Github::new(&access_token).expect("github client");
             loop {
                 match rx.recv() {
                     Ok(Job::Status(job)) => process_status(&client, job),
                     Ok(Job::PullRequest(job)) => {
-                        process_pull_request(&client, &config, &worker_internal, job)
+                        process_pull_request(&client, &worker_internal, job)
                     }
                     Err(err) => error!("Error receiving job: {}", err),
                 }
@@ -161,41 +160,24 @@ fn process_status(client: &client::Github, job: StatusJob) {
     }
 }
 
-fn process_pull_request(
-    client: &client::Github,
-    config: &Config,
-    worker: &Worker,
-    job: PullRequestJob,
-) {
+fn process_pull_request(client: &client::Github, worker: &Worker, job: PullRequestJob) {
     debug!("Processing pull request {:?}", job);
 
-    let (status, description) = match config.repos.iter().find(|curr_repo| {
-        job.owner == curr_repo.owner && job.repo == curr_repo.repo
-    }) {
-        Some(repo) => {
-            match github::validate_pull_request(&job, client, repo) {
-                Ok(failures) => {
-                    debug!("Validation results: {:?}", failures);
-                    if failures.is_empty() {
-                        (State::Success, "All checks passed".to_string())
-                    } else {
-                        (State::Failure, failures.join("\n"))
-                    }
-                }
-                Err(err) => {
-                    warn!("Failed to evaluate rules: {}", err);
-                    (State::Error, format!("Failed to evaluate rules: {}", err))
+    let (status, description) = {
+        match github::validate_pull_request(&job, client) {
+            Ok(failures) => {
+                debug!("Validation results: {:?}", failures);
+                if failures.is_empty() {
+                    (State::Success, "All checks passed".to_string())
+                } else {
+                    (State::Failure, failures.join("\n"))
                 }
             }
+            Err(err) => {
+                warn!("Failed to evaluate rules: {}", err);
+                (State::Error, format!("Failed to evaluate rules: {}", err))
+            }
         }
-        None => (
-            State::Error,
-            format!(
-                r#"Could not find repo "{}/{}" in the config"#,
-                &job.owner,
-                &job.repo
-            ),
-        ),
     };
 
     if let Err(err) = worker.queue_status(

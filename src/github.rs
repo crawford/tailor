@@ -12,13 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use base64;
 use chrono::prelude::*;
 use config;
 use errors::*;
 use expr;
 use expr::ast::Value;
+use github_rs::StatusCode;
 use github_rs::client::Github;
-use serde_json;
+use serde_yaml;
 use worker;
 
 #[derive(Clone, Value)]
@@ -28,6 +30,9 @@ struct PullRequest {
     body: String,
     commits: Vec<Commit>,
     comments: Vec<Comment>,
+
+    #[value(hidden)]
+    head_sha: String,
 }
 
 #[derive(Clone, Deserialize, Value)]
@@ -63,6 +68,7 @@ struct RawPullRequest {
     user: User,
     title: String,
     body: String,
+    head: RawNakedCommit,
 }
 
 #[derive(Clone, Deserialize)]
@@ -74,10 +80,20 @@ struct RawCommit {
 }
 
 #[derive(Clone, Deserialize)]
+struct RawNakedCommit {
+    sha: String,
+}
+
+#[derive(Clone, Deserialize)]
 struct RawCommitBody {
     author: Author,
     committer: Author,
     message: String,
+}
+
+#[derive(Deserialize)]
+struct RawContent {
+    content: String
 }
 
 #[derive(Deserialize)]
@@ -97,13 +113,10 @@ enum Permission {
     None,
 }
 
-pub fn validate_pull_request(
-    job: &worker::PullRequestJob,
-    client: &Github,
-    repo: &config::Repo,
-) -> Result<Vec<String>> {
-    let pr = fetch_pull_request(client, repo, job.number)?;
-    let exemptions = find_exemptions(client, repo, &pr)?;
+pub fn validate_pull_request(job: &worker::PullRequestJob, client: &Github) -> Result<Vec<String>> {
+    let pr = fetch_pull_request(client, &job.owner, &job.repo, job.number)?;
+    let repo = fetch_repo_config(client, &job.owner, &job.repo, &pr)?;
+    let exemptions = find_exemptions(client, &job.owner, &job.repo, &pr)?;
 
     let mut failures = Vec::new();
     let input = pr.clone().into();
@@ -115,8 +128,8 @@ pub fn validate_pull_request(
             format!(
                 r#"Failed to run "{}" from "{}/{}""#,
                 rule.name,
-                repo.owner,
-                repo.repo
+                job.owner,
+                job.repo
             )
         })?;
 
@@ -127,7 +140,42 @@ pub fn validate_pull_request(
     Ok(failures)
 }
 
-fn find_exemptions(client: &Github, repo: &config::Repo, pr: &PullRequest) -> Result<Vec<String>> {
+fn fetch_repo_config(
+    client: &Github,
+    owner: &str,
+    repo: &str,
+    pr: &PullRequest,
+) -> Result<config::Config> {
+    trace!("Fetching repo config for {}/{}", owner, repo);
+    let content: RawContent = match client
+        .get()
+        .repos()
+        .owner(owner)
+        .repo(repo)
+        .contents()
+        .path(".github/tailor.yaml")
+        .reference(&pr.head_sha)
+        .execute() {
+        Ok((_, StatusCode::Ok, Some(content))) => content,
+        Ok((_, StatusCode::NotFound, _)) => {
+            warn!("Repository {}/{} has no tailor configuration", owner, repo);
+            return Ok(config::Config { rules: Vec::new() })
+        }
+        Ok((_, status, _)) => {
+            error!("Failed to fetch repo configuration for {}/{}", owner, repo);
+            bail!(format!("Could not get repo config: HTTP {}", status))
+        }
+        Err(err) => bail!(err),
+    };
+    Ok(serde_yaml::from_slice(&base64::decode_config(&content.content, base64::MIME)?)?)
+}
+
+fn find_exemptions(
+    client: &Github,
+    owner: &str,
+    repo: &str,
+    pr: &PullRequest,
+) -> Result<Vec<String>> {
     let mut exemptions = Vec::new();
     for comment in &pr.comments {
         // TODO ALEX
@@ -135,16 +183,20 @@ fn find_exemptions(client: &Github, repo: &config::Repo, pr: &PullRequest) -> Re
             let mut split = comment.body.as_str().split("tailor disable");
             split.next();
             if let Some(disabled_check) = split.next() {
+                trace!(
+                    "Fetching repo collaborator status for {}",
+                    comment.user.login
+                );
                 let collaborator: Collaborator = match client
                     .get()
                     .repos()
-                    .owner(&repo.owner)
-                    .repo(&repo.repo)
+                    .owner(owner)
+                    .repo(repo)
                     .collaborators()
                     .username(&comment.user.login)
                     .permission()
                     .execute() {
-                    Ok((_, _, Some(json))) => serde_json::from_value(json)?,
+                    Ok((_, _, Some(collab))) => collab,
                     Ok((_, status, _)) => {
                         bail!(format!("Could not get collaborator data: HTTP {}", status))
                     }
@@ -160,31 +212,38 @@ fn find_exemptions(client: &Github, repo: &config::Repo, pr: &PullRequest) -> Re
     Ok(exemptions)
 }
 
-fn fetch_pull_request(client: &Github, repo: &config::Repo, number: usize) -> Result<PullRequest> {
+fn fetch_pull_request(
+    client: &Github,
+    owner: &str,
+    repo: &str,
+    number: usize,
+) -> Result<PullRequest> {
+    trace!("Fetching pull request {}/{}: {}", owner, repo, number);
     let pr: RawPullRequest = match client
         .get()
         .repos()
-        .owner(&repo.owner)
-        .repo(&repo.repo)
+        .owner(owner)
+        .repo(repo)
         .pulls()
         .number(&number.to_string())
         .execute() {
-        Ok((_, _, Some(json))) => json,
+        Ok((_, _, Some(pr))) => pr,
         Ok((_, status, _)) => bail!(format!("Could not get pull request: HTTP {}", status)),
         Err(err) => bail!(err),
     };
 
     let commits = {
+        trace!("Fetching pull request commits");
         let raw_commits: Vec<RawCommit> = match client
             .get()
             .repos()
-            .owner(&repo.owner)
-            .repo(&repo.repo)
+            .owner(owner)
+            .repo(repo)
             .pulls()
             .number(&number.to_string())
             .commits()
             .execute() {
-            Ok((_, _, Some(json))) => json,
+            Ok((_, _, Some(commits))) => commits,
             Ok((_, status, _)) => {
                 bail!(format!(
                     "Could not get pull request commits: HTTP {}",
@@ -216,16 +275,17 @@ fn fetch_pull_request(client: &Github, repo: &config::Repo, number: usize) -> Re
             .collect()
     };
 
+    trace!("Fetching pull request comments");
     let comments: Vec<Comment> = match client
         .get()
         .repos()
-        .owner(&repo.owner)
-        .repo(&repo.repo)
+        .owner(owner)
+        .repo(repo)
         .issues()
         .number(&number.to_string())
         .comments()
         .execute() {
-        Ok((_, _, Some(json))) => json,
+        Ok((_, _, Some(comments))) => comments,
         Ok((_, status, _)) => {
             bail!(format!(
                 "Could not get pull request comments: HTTP {}",
@@ -239,6 +299,7 @@ fn fetch_pull_request(client: &Github, repo: &config::Repo, number: usize) -> Re
         user: pr.user,
         title: pr.title,
         body: pr.body,
+        head_sha: pr.head.sha,
         commits,
         comments,
     })
