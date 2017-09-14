@@ -1,0 +1,10 @@
+rules:
+  - name: commit title
+    description: all commit titles must have a scope, be lowercase, and be no more than 50 characters
+    expression:  |-
+      .commits all((.message test "^([a-z/]+)|(\\*): [a-z \\-'.]+") and (.message test "^.{0,50}"))
+
+  - name: commit body
+    description: all commits must have a message body with each line having no more than 70 characters
+    expression: |-
+      .commits all(.message test "^.*\\n\\n.{10,70}(\\n.{0,70})*$")
