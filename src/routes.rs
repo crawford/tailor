@@ -12,12 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use errors::*;
 use iron::prelude::*;
 use iron::status;
 use persistent;
 use serde_json;
-use urlencoded::UrlEncodedBody;
+use std::io::Read;
 use worker;
 
 #[derive(Debug, Deserialize)]
@@ -49,21 +48,15 @@ struct Owner {
     login: String,
 }
 
-fn read_body(req: &mut Request) -> Result<String> {
-    req.get_ref::<UrlEncodedBody>()
-        .chain_err(|| "Failed to URL decode")?
-        .clone()
-        .remove("payload")
-        .ok_or("Failed to find payload")?
-        .pop()
-        .ok_or_else(|| "Empty payload".into())
-}
-
 pub fn hook_respond(req: &mut Request) -> IronResult<Response> {
-    let payload: Hook = serde_json::from_str(&read_body(req).map_err(|err| {
-        error!("Failed to read GitHub request: {}", err);
-        IronError::new(err, (status::InternalServerError, "Failed to read request"))
-    })?).map_err(|err| {
+    let payload: Hook = {
+        let mut body = String::new();
+        req.body.read_to_string(&mut body).map_err(|err| {
+            error!("Failed to read GitHub request: {}", err);
+            IronError::new(err, (status::InternalServerError, "Failed to read request"))
+        })?;
+        serde_json::from_str(&body)
+    }.map_err(|err| {
         error!("Failed to parse GitHub request: {}", err);
         IronError::new(err, (
             status::InternalServerError,
