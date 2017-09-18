@@ -133,4 +133,4 @@ After cloning the repository, Tailor can be built and run with `cargo run`. The 
 
 ### Configuring GitHub ###
 
-Tailor is designed to be used as a webhook. Each GitHub repository will need to be configured with a new webhook with the payload URL `http://url-of-tailor-instance/hook` and just the "Pull request" event.
+Tailor is designed to be used as a webhook. Each GitHub repository will need to be configured with a new webhook with the payload URL `http://url-of-tailor-instance/hook`, the content type set to `application/json`, and just the "Pull request" event. The token that is given to Tailor will only need to have the `repo:status` scope.
