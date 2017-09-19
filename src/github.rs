@@ -18,7 +18,6 @@ use config;
 use errors::*;
 use expr;
 use expr::ast::Value;
-use github_rs::StatusCode;
 use github_rs::client::Github;
 use serde_yaml;
 use worker;
@@ -93,7 +92,7 @@ struct RawCommitBody {
 
 #[derive(Deserialize)]
 struct RawContent {
-    content: String
+    content: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -147,7 +146,7 @@ fn fetch_repo_config(
     pr: &PullRequest,
 ) -> Result<config::Config> {
     trace!("Fetching repo config for {}/{}", owner, repo);
-    let content: RawContent = match client
+    let config: RawContent = match client
         .get()
         .repos()
         .owner(owner)
@@ -156,18 +155,22 @@ fn fetch_repo_config(
         .path(".github/tailor.yaml")
         .reference(&pr.head_sha)
         .execute() {
-        Ok((_, StatusCode::Ok, Some(content))) => content,
-        Ok((_, StatusCode::NotFound, _)) => {
-            warn!("Repository {}/{} has no tailor configuration", owner, repo);
-            return Ok(config::Config { rules: Vec::new() })
-        }
+        Ok((_, _, Some(config))) => config,
         Ok((_, status, _)) => {
             error!("Failed to fetch repo configuration for {}/{}", owner, repo);
             bail!(format!("Could not get repo config: HTTP {}", status))
         }
         Err(err) => bail!(err),
     };
-    Ok(serde_yaml::from_slice(&base64::decode_config(&content.content, base64::MIME)?)?)
+    match config.content {
+        Some(content) => Ok(serde_yaml::from_slice(
+            &base64::decode_config(&content, base64::MIME)?,
+        )?),
+        None => {
+            warn!("Repository {}/{} has no tailor configuration", owner, repo);
+            return Ok(config::Config { rules: Vec::new() });
+        }
+    }
 }
 
 fn find_exemptions(
