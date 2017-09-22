@@ -13,12 +13,14 @@
 // limitations under the License.
 
 use errors::*;
-use github;
+use github::{self, TryExecute};
 use github_rs::client;
 use iron;
 use std::fmt;
 use std::sync::mpsc;
 use std::thread;
+
+impl<'a> TryExecute for ::github_rs::repos::post::Sha<'a> {}
 
 #[derive(Clone)]
 pub struct Worker {
@@ -154,7 +156,7 @@ fn process_status(client: &client::Github, job: StatusJob) {
         .repo(&job.commit.repo)
         .statuses()
         .sha(&job.commit.sha)
-        .execute::<Empty>()
+        .try_execute::<Empty>()
     {
         error!("Failed to set status: {}", err)
     }
