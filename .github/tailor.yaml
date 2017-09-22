@@ -2,7 +2,7 @@ rules:
   - name: commit title
     description: all commit titles must have a scope, be lowercase, and be no more than 50 characters
     expression:  |-
-      .commits all(((.message test "^[a-z/\\-\\*]+: [a-z0-9 \\-'./]+") and (.message test "^.{0,50}\\n")) or (.message test "^Revert"))
+      .commits all(((.message test "^[a-z/*-]+: [[:alnum:] -'./-]+") and (.message test "^.{0,50}\\n")) or (.message test "^Revert"))
 
   - name: commit body
     description: all commits must have a message body with each line having no more than 72 characters
