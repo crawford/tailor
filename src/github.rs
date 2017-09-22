@@ -18,7 +18,10 @@ use config;
 use errors::*;
 use expr;
 use expr::ast::Value;
-use github_rs::client::Github;
+use github_rs::StatusCode;
+use github_rs::client::{Executor, Github};
+use serde::de::DeserializeOwned;
+use serde_json;
 use serde_yaml;
 use worker;
 
@@ -139,6 +142,40 @@ pub fn validate_pull_request(job: &worker::PullRequestJob, client: &Github) -> R
     Ok(failures)
 }
 
+pub trait TryExecute: Executor {
+    fn try_execute<T: DeserializeOwned>(self) -> Result<T>
+    where
+        Self: Sized,
+    {
+        #[derive(Deserialize)]
+        struct GithubError {
+            message: String,
+        }
+
+        match self.execute::<serde_json::Value>() {
+            Ok((_, StatusCode::Ok, Some(response))) => {
+                serde_json::from_value(response).chain_err(|| "Failed to parse response")
+            }
+            Ok((_, _, Some(response))) => {
+                serde_json::from_value::<GithubError>(response)
+                    .chain_err(|| "Failed to parse error response")
+                    .and_then(|error| Err(error.message.into()))
+            }
+            Ok((_, _, None)) => Err("Received error response from github with no message".into()),
+            Err(err) => Err(err).chain_err(|| "Failed to execute request"),
+        }.or_else(|err| {
+            error!("Failed to complete request: {}", err);
+            Err(err)
+        })
+    }
+}
+
+impl<'a> TryExecute for ::github_rs::repos::get::ContentsReference<'a> {}
+impl<'a> TryExecute for ::github_rs::repos::get::PullsNumber<'a> {}
+impl<'a> TryExecute for ::github_rs::repos::get::CollaboratorsUsernamePermission<'a> {}
+impl<'a> TryExecute for ::github_rs::repos::get::IssuesNumberComments<'a> {}
+impl<'a> TryExecute for ::github_rs::repos::get::PullsNumberCommits<'a> {}
+
 fn fetch_repo_config(
     client: &Github,
     owner: &str,
@@ -146,7 +183,7 @@ fn fetch_repo_config(
     pr: &PullRequest,
 ) -> Result<config::Config> {
     trace!("Fetching repo config for {}/{}", owner, repo);
-    let config: RawContent = match client
+    let config: RawContent = client
         .get()
         .repos()
         .owner(owner)
@@ -154,14 +191,10 @@ fn fetch_repo_config(
         .contents()
         .path(".github/tailor.yaml")
         .reference(&pr.head_sha)
-        .execute() {
-        Ok((_, _, Some(config))) => config,
-        Ok((_, status, _)) => {
-            error!("Failed to fetch repo configuration for {}/{}", owner, repo);
-            bail!(format!("Could not get repo config: HTTP {}", status))
-        }
-        Err(err) => bail!(err),
-    };
+        .try_execute()
+        .chain_err(|| {
+            format!("Failed to fetch repo configuration for {}/{}", owner, repo)
+        })?;
     match config.content {
         Some(content) => Ok(serde_yaml::from_slice(
             &base64::decode_config(&content, base64::MIME)?,
@@ -190,21 +223,17 @@ fn find_exemptions(
                     "Fetching repo collaborator status for {}",
                     comment.user.login
                 );
-                let collaborator: Collaborator = match client
-                    .get()
-                    .repos()
-                    .owner(owner)
-                    .repo(repo)
-                    .collaborators()
-                    .username(&comment.user.login)
-                    .permission()
-                    .execute() {
-                    Ok((_, _, Some(collab))) => collab,
-                    Ok((_, status, _)) => {
-                        bail!(format!("Could not get collaborator data: HTTP {}", status))
-                    }
-                    Err(err) => bail!(err),
-                };
+                let collaborator: Collaborator =
+                    client
+                        .get()
+                        .repos()
+                        .owner(owner)
+                        .repo(repo)
+                        .collaborators()
+                        .username(&comment.user.login)
+                        .permission()
+                        .try_execute()
+                        .chain_err(|| "Failed to fetch collaborator data")?;
                 if collaborator.permission == Permission::Admin {
                     exemptions.push(disabled_check.trim().to_string());
                 }
@@ -222,39 +251,30 @@ fn fetch_pull_request(
     number: usize,
 ) -> Result<PullRequest> {
     trace!("Fetching pull request {}/{}: {}", owner, repo, number);
-    let pr: RawPullRequest = match client
+    let pr: RawPullRequest = client
         .get()
         .repos()
         .owner(owner)
         .repo(repo)
         .pulls()
         .number(&number.to_string())
-        .execute() {
-        Ok((_, _, Some(pr))) => pr,
-        Ok((_, status, _)) => bail!(format!("Could not get pull request: HTTP {}", status)),
-        Err(err) => bail!(err),
-    };
+        .try_execute()
+        .chain_err(|| "Failed to fetch pull request")?;
 
     let commits = {
         trace!("Fetching pull request commits");
-        let raw_commits: Vec<RawCommit> = match client
-            .get()
-            .repos()
-            .owner(owner)
-            .repo(repo)
-            .pulls()
-            .number(&number.to_string())
-            .commits()
-            .execute() {
-            Ok((_, _, Some(commits))) => commits,
-            Ok((_, status, _)) => {
-                bail!(format!(
-                    "Could not get pull request commits: HTTP {}",
-                    status
-                ))
-            }
-            Err(err) => bail!(err),
-        };
+        let raw_commits: Vec<RawCommit> =
+            client
+                .get()
+                .repos()
+                .owner(owner)
+                .repo(repo)
+                .pulls()
+                .number(&number.to_string())
+                .commits()
+                .try_execute()
+                .chain_err(|| "Failed to fetch pull request commits")?;
+
         raw_commits
             .into_iter()
             .map(|c: RawCommit| {
@@ -279,7 +299,7 @@ fn fetch_pull_request(
     };
 
     trace!("Fetching pull request comments");
-    let comments: Vec<Comment> = match client
+    let comments: Vec<Comment> = client
         .get()
         .repos()
         .owner(owner)
@@ -287,16 +307,8 @@ fn fetch_pull_request(
         .issues()
         .number(&number.to_string())
         .comments()
-        .execute() {
-        Ok((_, _, Some(comments))) => comments,
-        Ok((_, status, _)) => {
-            bail!(format!(
-                "Could not get pull request comments: HTTP {}",
-                status
-            ))
-        }
-        Err(err) => bail!(err),
-    };
+        .try_execute()
+        .chain_err(|| "Failed to fetch pull request comments")?;
 
     Ok(PullRequest {
         user: pr.user,
