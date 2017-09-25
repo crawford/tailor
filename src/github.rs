@@ -147,9 +147,18 @@ pub trait TryExecute: Executor {
     where
         Self: Sized,
     {
-        #[derive(Deserialize)]
-        struct GithubError {
+        #[derive(Debug, Deserialize)]
+        struct GithubErrorResponse {
             message: String,
+            errors: Option<Vec<GithubError>>,
+        }
+
+        #[derive(Debug, Deserialize)]
+        struct GithubError {
+            resource: String,
+            field: String,
+            code: String,
+            message: Option<String>,
         }
 
         match self.execute::<serde_json::Value>() {
@@ -158,9 +167,12 @@ pub trait TryExecute: Executor {
                 serde_json::from_value(response).chain_err(|| "Failed to parse response")
             }
             Ok((_, _, Some(response))) => {
-                serde_json::from_value::<GithubError>(response)
+                serde_json::from_value::<GithubErrorResponse>(response)
                     .chain_err(|| "Failed to parse error response")
-                    .and_then(|error| Err(error.message.into()))
+                    .and_then(|error| {
+                        debug!("Failed to complete request: {:?}", error);
+                        Err(error.message.into())
+                    })
             }
             Ok((_, _, None)) => Err("Received error response from github with no message".into()),
             Err(err) => Err(err).chain_err(|| "Failed to execute request"),
