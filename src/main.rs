@@ -105,7 +105,7 @@ fn run() -> Result<()> {
         .chain_err(|| "Failed to create status worker")?;
 
     let mut router = Router::new();
-    router.post("/hook", routes::hook_respond, "github_webhook");
+    router.post("/hook", routes::handle_event, "github_webhook");
 
     let mut chain = Chain::new(router);
     chain.link(persistent::Write::<worker::Worker>::both(worker));

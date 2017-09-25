@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use github::types::Event;
 use iron::prelude::*;
 use iron::status;
 use persistent;
@@ -19,37 +20,8 @@ use serde_json;
 use std::io::Read;
 use worker;
 
-#[derive(Debug, Deserialize)]
-struct Hook {
-    repository: Repository,
-    action: String,
-    pull_request: Option<PullRequest>,
-}
-
-#[derive(Debug, Deserialize)]
-struct PullRequest {
-    number: usize,
-    head: Commit,
-}
-
-#[derive(Debug, Deserialize)]
-struct Commit {
-    sha: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct Repository {
-    owner: Owner,
-    name: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct Owner {
-    login: String,
-}
-
-pub fn hook_respond(req: &mut Request) -> IronResult<Response> {
-    let payload: Hook = {
+pub fn handle_event(req: &mut Request) -> IronResult<Response> {
+    let event: Event = {
         let mut body = String::new();
         req.body.read_to_string(&mut body).map_err(|err| {
             error!("Failed to read GitHub request: {}", err);
@@ -64,16 +36,22 @@ pub fn hook_respond(req: &mut Request) -> IronResult<Response> {
         ))
     })?;
 
-    info!("Received GitHub hook {:?}", payload);
-    let pull_request = match payload.pull_request {
+    info!("Received GitHub event: {:?}", event);
+
+    if event.hook.is_some() {
+        debug!("Received GitHub event for hook registration");
+        return Ok(Response::with(status::Ok));
+    };
+
+    let pull_request = match event.pull_request {
         Some(pull_request) => pull_request,
         None => {
-            info!("Received GitHub request for something other than a pull request; ignoring.");
+            info!("Received GitHub event for something other than a pull request; ignoring.");
             return Ok(Response::with((status::Ok, "Not a pull request")));
         }
     };
 
-    if payload.action == "closed" {
+    if event.action == Some("closed".into()) {
         debug!("Received GitHub request for closed pull request; ignoring.");
         return Ok(Response::with((status::Ok, "Ignoring closed pull request")));
     }
@@ -94,8 +72,8 @@ pub fn hook_respond(req: &mut Request) -> IronResult<Response> {
         worker::State::Pending,
         "The pull request has been received".to_string(),
         worker::Commit {
-            owner: payload.repository.owner.login.clone(),
-            repo: payload.repository.name.clone(),
+            owner: event.repository.owner.login.clone(),
+            repo: event.repository.name.clone(),
             sha: pull_request.head.sha.clone(),
         },
     )
@@ -111,8 +89,8 @@ pub fn hook_respond(req: &mut Request) -> IronResult<Response> {
     }
 
     if let Err(err) = worker.queue_pull_request(worker::PullRequestJob {
-        owner: payload.repository.owner.login,
-        repo: payload.repository.name,
+        owner: event.repository.owner.login,
+        repo: event.repository.name,
         number: pull_request.number,
         head_sha: pull_request.head.sha,
     })
