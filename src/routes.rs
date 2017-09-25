@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use github::types::Event;
 use iron::prelude::*;
 use iron::status;
 use persistent;
@@ -19,37 +20,8 @@ use serde_json;
 use std::io::Read;
 use worker;
 
-#[derive(Debug, Deserialize)]
-struct Hook {
-    repository: Repository,
-    action: String,
-    pull_request: Option<PullRequest>,
-}
-
-#[derive(Debug, Deserialize)]
-struct PullRequest {
-    number: usize,
-    head: Commit,
-}
-
-#[derive(Debug, Deserialize)]
-struct Commit {
-    sha: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct Repository {
-    owner: Owner,
-    name: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct Owner {
-    login: String,
-}
-
 pub fn hook_respond(req: &mut Request) -> IronResult<Response> {
-    let payload: Hook = {
+    let payload: Event = {
         let mut body = String::new();
         req.body.read_to_string(&mut body).map_err(|err| {
             error!("Failed to read GitHub request: {}", err);

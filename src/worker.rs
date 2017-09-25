@@ -14,6 +14,7 @@
 
 use errors::*;
 use github::{self, TryExecute};
+use github::types::Empty;
 use github_rs::client;
 use iron;
 use std::fmt;
@@ -115,9 +116,6 @@ impl fmt::Debug for Commit {
     }
 }
 
-#[derive(Deserialize)]
-pub struct Empty {}
-
 pub fn spawn(access_token: String) -> Result<Worker> {
     let (tx, rx) = mpsc::channel::<Job>();
 
@@ -166,7 +164,7 @@ fn process_pull_request(client: &client::Github, worker: &Worker, job: PullReque
     debug!("Processing pull request {:?}", job);
 
     let (status, description) = {
-        match github::validate_pull_request(&job, client) {
+        match github::validate::pull_request(&job, client) {
             Ok(failures) => {
                 debug!("Validation results: {:?}", failures);
                 if failures.is_empty() {
