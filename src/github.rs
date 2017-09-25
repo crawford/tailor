@@ -153,7 +153,8 @@ pub trait TryExecute: Executor {
         }
 
         match self.execute::<serde_json::Value>() {
-            Ok((_, StatusCode::Ok, Some(response))) => {
+            Ok((_, StatusCode::Ok, Some(response))) |
+            Ok((_, StatusCode::Created, Some(response))) => {
                 serde_json::from_value(response).chain_err(|| "Failed to parse response")
             }
             Ok((_, _, Some(response))) => {
