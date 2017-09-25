@@ -20,8 +20,8 @@ use serde_json;
 use std::io::Read;
 use worker;
 
-pub fn hook_respond(req: &mut Request) -> IronResult<Response> {
-    let payload: Event = {
+pub fn handle_event(req: &mut Request) -> IronResult<Response> {
+    let event: Event = {
         let mut body = String::new();
         req.body.read_to_string(&mut body).map_err(|err| {
             error!("Failed to read GitHub request: {}", err);
@@ -36,16 +36,22 @@ pub fn hook_respond(req: &mut Request) -> IronResult<Response> {
         ))
     })?;
 
-    info!("Received GitHub hook {:?}", payload);
-    let pull_request = match payload.pull_request {
+    info!("Received GitHub event: {:?}", event);
+
+    if event.hook.is_some() {
+        debug!("Received GitHub event for hook registration");
+        return Ok(Response::with(status::Ok));
+    };
+
+    let pull_request = match event.pull_request {
         Some(pull_request) => pull_request,
         None => {
-            info!("Received GitHub request for something other than a pull request; ignoring.");
+            info!("Received GitHub event for something other than a pull request; ignoring.");
             return Ok(Response::with((status::Ok, "Not a pull request")));
         }
     };
 
-    if payload.action == "closed" {
+    if event.action == Some("closed".into()) {
         debug!("Received GitHub request for closed pull request; ignoring.");
         return Ok(Response::with((status::Ok, "Ignoring closed pull request")));
     }
@@ -66,8 +72,8 @@ pub fn hook_respond(req: &mut Request) -> IronResult<Response> {
         worker::State::Pending,
         "The pull request has been received".to_string(),
         worker::Commit {
-            owner: payload.repository.owner.login.clone(),
-            repo: payload.repository.name.clone(),
+            owner: event.repository.owner.login.clone(),
+            repo: event.repository.name.clone(),
             sha: pull_request.head.sha.clone(),
         },
     )
@@ -83,8 +89,8 @@ pub fn hook_respond(req: &mut Request) -> IronResult<Response> {
     }
 
     if let Err(err) = worker.queue_pull_request(worker::PullRequestJob {
-        owner: payload.repository.owner.login,
-        repo: payload.repository.name,
+        owner: event.repository.owner.login,
+        repo: event.repository.name,
         number: pull_request.number,
         head_sha: pull_request.head.sha,
     })

@@ -61,7 +61,7 @@ pub struct Content {
     pub content: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct Empty {}
 
 #[derive(Debug, Deserialize)]
@@ -80,8 +80,9 @@ pub struct Error {
 
 #[derive(Debug, Deserialize)]
 pub struct Event {
-    pub action: String,
     pub repository: Repository,
+    pub action: Option<String>,
+    pub hook: Option<Empty>,
     pub pull_request: Option<PullRequest>,
 }
 
