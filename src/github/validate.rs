@@ -41,6 +41,8 @@ struct Commit {
     author: types::Author,
     committer: types::Author,
     message: String,
+    title: String,
+    description: String,
 }
 
 pub fn pull_request(job: &worker::PullRequestJob, client: &Github) -> Result<Vec<String>> {
@@ -95,7 +97,7 @@ fn fetch_repo_config(
         )?),
         None => {
             warn!("Repository {}/{} has no tailor configuration", owner, repo);
-            return Ok(config::Config { rules: Vec::new() });
+            Ok(config::Config { rules: Vec::new() })
         }
     }
 }
@@ -169,27 +171,42 @@ fn fetch_pull_request(
                 .try_execute()
                 .chain_err(|| "Failed to fetch pull request commits")?;
 
-        raw_commits
-            .into_iter()
-            .map(|c: types::Commit| {
-                Commit {
-                    sha: c.sha,
-                    author: types::Author {
-                        name: c.commit.author.name,
-                        email: c.commit.author.email,
-                        date: c.commit.author.date,
-                        github_login: Some(c.author.login),
-                    },
-                    committer: types::Author {
-                        name: c.commit.committer.name,
-                        email: c.commit.committer.email,
-                        date: c.commit.committer.date,
-                        github_login: Some(c.committer.login),
-                    },
-                    message: c.commit.message,
+        let mut commits = Vec::new();
+        for c in raw_commits {
+            let (title, description) = {
+                let mut lines = c.commit.message.lines();
+                let title = lines.next().expect("at least one line").to_string();
+                match lines.next() {
+                    Some("") | None => {}
+                    _ => return Err(
+                        "Malformed commit message (no empty line between title and description)"
+                        .into(),
+                    ),
                 }
+                let description = lines.fold(String::new(), |lines, line| lines + line);
+                (title, description)
+            };
+
+            commits.push(Commit {
+                sha: c.sha,
+                author: types::Author {
+                    name: c.commit.author.name,
+                    email: c.commit.author.email,
+                    date: c.commit.author.date,
+                    github_login: Some(c.author.login),
+                },
+                committer: types::Author {
+                    name: c.commit.committer.name,
+                    email: c.commit.committer.email,
+                    date: c.commit.committer.date,
+                    github_login: Some(c.committer.login),
+                },
+                message: c.commit.message,
+                title,
+                description,
             })
-            .collect()
+        }
+        commits
     };
 
     trace!("Fetching pull request comments");
