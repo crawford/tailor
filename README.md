@@ -24,7 +24,7 @@ rules:
 
     # The expression describes the rule itself. Refer to the language
     # documentation for an overview of the available functionality.
-    expression:  .commits all(.message test "^.{0,50}$")
+    expression:  .commits all(.title length < 51)
 ```
 
 Each of the rules are run on the entire pull request (the [root context](README.md#root-context)). They are run independently and cannot influence one another. Often times, it is useful to use `.commits all` to run an expression on each of the commits in the pull request, requiring all of them to comply. This is detailed further in the [Expressions section](README.md#expressions). The rule expression must result in a boolean value, `true` indicating a success and `false` a failure.
@@ -39,7 +39,7 @@ It might be helpful to break down a few examples.
 
 This expression returns `true` if there are exactly ten commits in the pull request: `.commits length = 10`. Parenthesis around every operation could be added for clarity: `(((.commits) length) = 10)`
 
-This expression returns `true` if every commit message is no more than fifty characters: `.commits all(.message test "^.{0,50}$")`. This expression makes use of the `all` operator, which is used for manipulating lists. For every commit, the expression `.message test "^.{0,50}$"` is evaluated with the context set to the commit in question. This inner expression then uses a context specifier (`.message`) to get the commit message and uses `test` to see if there are more than fifty characters. If every one of the inner expressions evaluates to `true`, `all` also results in `true`.
+This expression returns `true` if every commit message is no more than fifty characters: `.commits all(.title length < 51)`. This expression makes use of the `all` operator, which is used for manipulating lists. For every commit, the expression `.title length < 51` is evaluated with the context set to the commit in question. This inner expression then uses a context specifier (`.title`) to get the commit title and uses `length` to get the length of the title and compares to see if there are more than fifty characters. If every one of the inner expressions evaluates to `true`, `all` also results in `true`.
 
 There are a handful of other operators, detailed below.
 
@@ -74,11 +74,17 @@ Each of the list manipulation operators (except `length`), accepts an expression
 |   `map`  |    List   | Expression |   List  | List the result of each elements expression                     |
 | `length` |    List   |            | Numeral | The number of elements in the list                              |
 
-###### Miscellaneous ######
+###### String Manipulation ######
 
 | Operator |   Input   |  Argument  |  Result |                           Description                           |
 |:--------:|:---------:|:----------:|:-------:|:----------------------------------------------------------------|
 |  `test`  |   String  |   String   | Boolean | `true` if the argument (a regular expression) matches the input |
+| `lines`  |   String  |            |  List   | Splits a string by newlines into a list of strings              |
+
+###### Miscellaneous ######
+
+| Operator |   Input   |  Argument  |  Result |                           Description                           |
+|:--------:|:---------:|:----------:|:-------:|:----------------------------------------------------------------|
 |    `.`   |           |            |  Value  | The current context                                             |
 
 ##### Values #####

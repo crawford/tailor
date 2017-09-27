@@ -37,6 +37,7 @@ enum PartialOperation {
     Length,
 
     Test(Expr),
+    Lines,
 }
 
 #[derive(PartialEq)]
@@ -131,7 +132,8 @@ named!(value <&str, Expr>, ws!(
 named!(operation0 <&str, PartialOperation>, ws!(
     alt!(
         tag!("not")    => { |_| PartialOperation::Not    } |
-        tag!("length") => { |_| PartialOperation::Length }
+        tag!("length") => { |_| PartialOperation::Length } |
+        tag!("lines")  => { |_| PartialOperation::Lines  }
     )
 ));
 
@@ -197,6 +199,7 @@ named!(expr <&str, Expr>, ws!(
                     PartialOperation::Length      => Expr::Operation(Operation::Length(Box::new(ast))),
 
                     PartialOperation::Test(arg) => Expr::Operation(Operation::Test(Box::new(ast), Box::new(arg))),
+                    PartialOperation::Lines     => Expr::Operation(Operation::Lines(Box::new(ast))),
                 }
             }
         ) >>

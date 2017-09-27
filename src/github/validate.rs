@@ -183,7 +183,7 @@ fn fetch_pull_request(
                         .into(),
                     ),
                 }
-                let description = lines.fold(String::new(), |lines, line| lines + line);
+                let description = lines.collect::<Vec<_>>().as_slice().join("\n");
                 (title, description)
             };
 

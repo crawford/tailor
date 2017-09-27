@@ -142,6 +142,14 @@ fn eval_expr(expr: Expr, context: &Value) -> Result<Value> {
                     .is_match(&expr!(*term, context, Value::String)),
             ))
         }
+        Expr::Operation(Operation::Lines(a)) => {
+            Ok(Value::List(
+                expr!(*a, context, Value::String)
+                    .lines()
+                    .map(|s| Expr::Value(Value::String(s.into())))
+                    .collect::<Vec<_>>(),
+            ))
+        }
         Expr::Operation(Operation::Context(path)) => {
             let mut context = context;
             for elem in path.split('.') {
