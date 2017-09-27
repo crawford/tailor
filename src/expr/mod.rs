@@ -19,18 +19,24 @@ use regex::Regex;
 use self::ast::{Expr, Operation, Value};
 
 macro_rules! expr {
-    ( $expr:expr, $context:expr, $type:path  ) => {
+    ( $expr:expr, $context:expr, $type:path ) => {
+        expr!(@inner $expr, $context, stringify!($type), $type(v) => v,)
+    };
+    ( $expr:expr, $context:expr, $($type:path : $func:tt()),+ ) => {
+        expr!(@inner $expr, $context, stringify!($($type) +), $($type(v) => v.$func(),)+)
+    };
+    (@inner $expr:expr, $context:expr, $types:expr, $($func:tt)* ) => {
         match match $expr {
             Expr::Value(v) => v,
             Expr::Operation(o) => eval_expr(Expr::Operation(o), $context)?,
         } {
-            $type(v) => v,
+            $($func)*
             v => {
-                trace!("Invalid value ({:?}); expected {}", v, stringify!($type));
+                trace!("Invalid value ({:?}); expected one of: {}", v, $types);
                 Err("Invalid type")?
             }
         }
-    };
+    }
 }
 
 pub fn eval(expression: &str, input: &Value) -> Result<bool> {
@@ -125,9 +131,11 @@ fn eval_expr(expr: Expr, context: &Value) -> Result<Value> {
             }
             Ok(Value::List(result))
         }
-        Expr::Operation(Operation::Length(a)) => Ok(Value::Numeral(
-            expr!(*a, context, Value::List).len(),
-        )),
+        Expr::Operation(Operation::Length(a)) => {
+            Ok(Value::Numeral(
+                expr!(*a, context, Value::List: len(), Value::String: len()),
+            ))
+        }
         Expr::Operation(Operation::Test(term, pattern)) => {
             Ok(Value::Boolean(
                 Regex::new(&expr!(*pattern, context, Value::String))?

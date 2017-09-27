@@ -279,7 +279,10 @@ mod test {
         );
         assert_eq!(
             value(r#""^[A-Za-z\":\\]{,100}$""#),
-            IResult::Done("", Expr::Value(Value::String(r#"^[A-Za-z":\]{,100}$"#.to_string())))
+            IResult::Done(
+                "",
+                Expr::Value(Value::String(r#"^[A-Za-z":\]{,100}$"#.to_string())),
+            )
         );
     }
 

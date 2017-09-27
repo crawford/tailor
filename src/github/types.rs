@@ -35,7 +35,7 @@ pub struct Comment {
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Deserialize)]
 pub struct Commit {
     pub sha: String,
     pub commit: CommitBody,
@@ -43,7 +43,7 @@ pub struct Commit {
     pub committer: User,
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Deserialize)]
 pub struct CommitBody {
     pub author: Author,
     pub committer: Author,

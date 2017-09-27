@@ -114,6 +114,8 @@ The root context is the initial input (a dictionary) into the rule expression. I
       .date
       .github_login
     .message
+    .title
+    .description
   .comments[]
     .user
       .login
