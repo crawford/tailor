@@ -33,6 +33,8 @@ pub enum Operation {
     Length(Box<Expr>),
 
     Test(Box<Expr>, Box<Expr>),
+    Lines(Box<Expr>),
+
     Context(String),
 }
 

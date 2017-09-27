@@ -74,11 +74,17 @@ Each of the list manipulation operators (except `length`), accepts an expression
 |   `map`  |    List   | Expression |   List  | List the result of each elements expression                     |
 | `length` |    List   |            | Numeral | The number of elements in the list                              |
 
-###### Miscellaneous ######
+###### String Manipulation ######
 
 | Operator |   Input   |  Argument  |  Result |                           Description                           |
 |:--------:|:---------:|:----------:|:-------:|:----------------------------------------------------------------|
 |  `test`  |   String  |   String   | Boolean | `true` if the argument (a regular expression) matches the input |
+| `lines`  |   String  |            |  List   | Splits a string by newlines into a list of strings              |
+
+###### Miscellaneous ######
+
+| Operator |   Input   |  Argument  |  Result |                           Description                           |
+|:--------:|:---------:|:----------:|:-------:|:----------------------------------------------------------------|
 |    `.`   |           |            |  Value  | The current context                                             |
 
 ##### Values #####
