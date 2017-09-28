@@ -23,6 +23,7 @@ serde = "*"
 serde_derive = "*"
 serde_json = "*"
 serde_yaml = "*"
+snap = "*"
 
 [features]
 watch = ["handlebars-iron/watch"]
