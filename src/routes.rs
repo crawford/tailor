@@ -12,11 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use base64;
+use errors::*;
 use github::types::Event;
+use handlebars_iron::Template;
 use iron::prelude::*;
 use iron::status;
+use params::{Map, Params, Value};
 use persistent;
 use serde_json;
+use snap;
 use std::io::Read;
 use worker;
 
@@ -71,6 +76,7 @@ pub fn handle_event(req: &mut Request) -> IronResult<Response> {
     if let Err(err) = worker.queue_status(
         worker::State::Pending,
         "The pull request has been received".to_string(),
+        None,
         worker::Commit {
             owner: event.repository.owner.login.clone(),
             repo: event.repository.name.clone(),
@@ -108,4 +114,51 @@ pub fn handle_event(req: &mut Request) -> IronResult<Response> {
     Ok(Response::with(
         (status::Ok, "Sent data to processing thread"),
     ))
+}
+
+pub fn handle_status(req: &mut Request) -> IronResult<Response> {
+    fn decode_message(params: &Map) -> Result<String> {
+        match params.find(&["snap"]) {
+            Some(&Value::String(ref msg)) => {
+                Ok(String::from_utf8(snap::Decoder::new()
+                    .decompress_vec(
+                        base64::decode_config(msg, base64::URL_SAFE_NO_PAD)
+                            .chain_err(|| "Failed to decode message")?
+                            .as_slice())
+                        .chain_err(|| "Failed to decompress message")?)
+                    .chain_err(|| "Not valid UTF-8 data")?)
+            }
+            _ => Err("No message specified".into()),
+        }
+    }
+
+    let params = match req.get_ref::<Params>() {
+        Ok(params) => params,
+        Err(err) => {
+            error!("Failed to read /status paramaters: {}", err);
+            return Ok(Response::with(
+                (status::BadRequest, "Parameters are malformed"),
+            ));
+        }
+    };
+
+    match decode_message(params) {
+        Ok(msg) => {
+            Ok(Response::with((
+                status::Ok,
+                Template::new(
+                    "status",
+                    &json!({
+                        "statuses": msg.lines().collect::<Vec<_>>(),
+                    }),
+                ),
+            )))
+        }
+        Err(err) => {
+            error!("Failed to decode message: {}", err);
+            Ok(Response::with(
+                (status::BadRequest, "Failed to decode message"),
+            ))
+        }
+    }
 }
