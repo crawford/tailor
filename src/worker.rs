@@ -12,11 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use base64;
 use errors::*;
 use github::{self, TryExecute};
 use github::types::Empty;
 use github_rs::client;
 use iron;
+use snap;
 use std::fmt;
 use std::sync::mpsc;
 use std::thread;
@@ -36,13 +38,20 @@ impl Worker {
         )
     }
 
-    pub fn queue_status(&self, state: State, description: String, commit: Commit) -> Result<()> {
+    pub fn queue_status(
+        &self,
+        state: State,
+        description: String,
+        url: Option<String>,
+        commit: Commit,
+    ) -> Result<()> {
         debug!("Queuing status {:?} for {:?}", state, commit);
         self.tx
             .send(Job::Status(StatusJob {
                 status: Status {
                     state: state,
                     description: description,
+                    target_url: url,
                     context: "tailor".to_string(),
                 },
                 commit,
@@ -90,6 +99,7 @@ pub struct Status {
     pub state: State,
     pub description: String,
     pub context: String,
+    pub target_url: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -116,7 +126,7 @@ impl fmt::Debug for Commit {
     }
 }
 
-pub fn spawn(access_token: String) -> Result<Worker> {
+pub fn spawn(access_token: String, address: String) -> Result<Worker> {
     let (tx, rx) = mpsc::channel::<Job>();
 
     let worker = Worker { tx };
@@ -129,7 +139,7 @@ pub fn spawn(access_token: String) -> Result<Worker> {
                 match rx.recv() {
                     Ok(Job::Status(job)) => process_status(&client, job),
                     Ok(Job::PullRequest(job)) => {
-                        process_pull_request(&client, &worker_internal, job)
+                        process_pull_request(&client, &worker_internal, &address, job)
                     }
                     Err(err) => error!("Error receiving job: {}", err),
                 }
@@ -160,29 +170,54 @@ fn process_status(client: &client::Github, job: StatusJob) {
     }
 }
 
-fn process_pull_request(client: &client::Github, worker: &Worker, job: PullRequestJob) {
+fn process_pull_request(
+    client: &client::Github,
+    worker: &Worker,
+    address: &str,
+    job: PullRequestJob,
+) {
     debug!("Processing pull request {:?}", job);
 
-    let (status, description) = {
-        match github::validate::pull_request(&job, client) {
-            Ok(failures) => {
-                debug!("Validation results: {:?}", failures);
-                if failures.is_empty() {
-                    (State::Success, "All checks passed".to_string())
-                } else {
-                    (State::Failure, failures.join("\n"))
-                }
-            }
-            Err(err) => {
-                warn!("Failed to evaluate rules: {}", err);
-                (State::Error, format!("Failed to evaluate rules: {}", err))
-            }
+    fn create_status_url(failures: String, address: &str) -> Result<String> {
+        let compressed = snap::Encoder::new()
+            .compress_vec(failures.as_bytes())
+            .chain_err(|| "Failed to compress message")?;
+
+        Ok(format!(
+            "http://{}/status?snap={}",
+            address,
+            base64::encode_config(&compressed, base64::URL_SAFE_NO_PAD),
+        ))
+    }
+
+    let (state, description, url) = match match github::validate::pull_request(&job, client) {
+        Ok(ref failures) if failures.is_empty() => {
+            Ok((State::Success, "All checks passed".into(), None))
+        }
+        Ok(failures) => {
+            create_status_url(failures.join("\n"), address).map(|url| {
+                (State::Failure, "One or more checks failed".into(), Some(url))
+            })
+        }
+        Err(err) => {
+            warn!("Failed to evaluate rules: {}", err);
+
+            create_status_url(err.to_string(), address).map(|url| {
+                (State::Error, "Failed to evaluate rules".into(), Some(url))
+            })
+        }
+    } {
+        Ok(status) => status,
+        Err(err) => {
+            error!("Failed to create status: {}", err);
+            (State::Error, "Failed to create status page".into(), None)
         }
     };
 
     if let Err(err) = worker.queue_status(
-        status,
+        state,
         description,
+        url,
         Commit {
             owner: job.owner,
             repo: job.repo,

@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="UTF-8">
+		<title>Tailor Status</title>
+		<style>
+			#statuses {
+				margin: auto;
+				background-color: #FAFAFA;
+				width: fit-content;
+				min-width: 500px;
+				padding: 1em;
+				border-radius: 0.5em;
+				border-style: solid;
+				border-width: 1px;
+				border-color: #D0D0D0;
+				box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2), 0 6px 20px rgba(0, 0, 0, 0.19)
+			}
+		</style>
+	</head>
+
+	<body>
+		<div id="statuses">
+			Failures:
+			<ul>
+			{{#each statuses}}
+				<li>{{this}}</li>
+			{{/each}}
+			</ul>
+		</div>
+	</body>
+</html>

@@ -10,10 +10,12 @@ clap = "*"
 value-derive = { path = "src/expr/value-derive" }
 error-chain = "*"
 github-rs = "*"
+handlebars-iron = "*"
 iron = "*"
 log = "*"
 loggerv = "*"
 nom = "*"
+params = "*"
 persistent = "*"
 regex = "*"
 router = "*"
@@ -21,3 +23,7 @@ serde = "*"
 serde_derive = "*"
 serde_json = "*"
 serde_yaml = "*"
+snap = "*"
+
+[features]
+watch = ["handlebars-iron/watch"]

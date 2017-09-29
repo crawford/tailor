@@ -21,20 +21,24 @@ extern crate value_derive;
 #[macro_use]
 extern crate error_chain;
 extern crate github_rs;
+extern crate handlebars_iron;
 extern crate iron;
 #[macro_use]
 extern crate log;
 extern crate loggerv;
 #[macro_use]
 extern crate nom;
+extern crate params;
 extern crate persistent;
 extern crate regex;
 extern crate router;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
+#[macro_use]
 extern crate serde_json;
 extern crate serde_yaml;
+extern crate snap;
 
 mod config;
 mod errors;
@@ -45,10 +49,10 @@ mod worker;
 
 use clap::{Arg, App};
 use errors::*;
+use handlebars_iron::{DirectorySource, HandlebarsEngine};
 use iron::prelude::*;
 use router::Router;
 use std::str::FromStr;
-use std::process;
 
 quick_main!(run);
 
@@ -73,6 +77,24 @@ fn run() -> Result<()> {
                 .default_value("8080"),
         )
         .arg(
+            Arg::with_name("SERVER")
+                .short("s")
+                .long("server-address")
+                .takes_value(true)
+                .help("The server address of the instance")
+                .default_value("localhost:8080"),
+        )
+        .arg(
+            Arg::with_name("TEMPLATES")
+                .short("m")
+                .long("templates")
+                .takes_value(true)
+                .help(
+                    "The path to the templates, relative to the working directory",
+                )
+                .default_value("assets/templates"),
+        )
+        .arg(
             Arg::with_name("TOKEN")
                 .short("t")
                 .long("token")
@@ -92,23 +114,32 @@ fn run() -> Result<()> {
     loggerv::init_with_verbosity(args.occurrences_of("VERBOSITY")).unwrap();
 
     let address = args.value_of("ADDRESS").expect("address flag");
-    let port = match u16::from_str(args.value_of("PORT").expect("port flag")) {
-        Ok(port) => port,
-        Err(err) => {
-            eprintln!("Failed to parse port: {}", err);
-            process::exit(2)
-        }
-    };
+    let port = u16::from_str(args.value_of("PORT").expect("port flag"))
+        .chain_err(|| "Failed to parse port")?;
 
     debug!("Spawning worker thread");
-    let worker = worker::spawn(args.value_of("TOKEN").expect("token").to_string())
-        .chain_err(|| "Failed to create status worker")?;
+    let worker = worker::spawn(
+        args.value_of("TOKEN").expect("token").to_string(),
+        args.value_of("SERVER").expect("server").to_string(),
+    ).chain_err(|| "Failed to create status worker")?;
 
     let mut router = Router::new();
     router.post("/hook", routes::handle_event, "github_webhook");
+    router.get("/status", routes::handle_status, "status");
+
+    let mut engine = HandlebarsEngine::new();
+    engine.add(Box::new(DirectorySource::new(
+        args.value_of("TEMPLATES").expect("templates"),
+        ".hbs",
+    )));
+
+    engine.reload().chain_err(
+        || "Failed to start templating engine",
+    )?;
 
     let mut chain = Chain::new(router);
     chain.link(persistent::Write::<worker::Worker>::both(worker));
+    chain.link_after(engine);
 
     debug!("Starting web server");
     Iron::new(chain)
