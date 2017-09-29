@@ -39,7 +39,7 @@ It might be helpful to break down a few examples.
 
 This expression returns `true` if there are exactly ten commits in the pull request: `.commits length = 10`. Parenthesis around every operation could be added for clarity: `(((.commits) length) = 10)`
 
-This expression returns `true` if every commit message is no more than fifty characters: `.commits all(.title length < 51)`. This expression makes use of the `all` operator, which is used for manipulating lists. For every commit, the expression `.title length < 51` is evaluated with the context set to the commit in question. This inner expression then uses a context specifier (`.title`) to get the commit title and uses `length` to get the length of the title and compares to see if there are more than fifty characters. If every one of the inner expressions evaluates to `true`, `all` also results in `true`.
+This expression returns `true` if every commit title is no more than fifty characters: `.commits all(.title length < 51)`. This expression makes use of the `all` operator, which is used for manipulating lists. For every commit, the expression `.title length < 51` is evaluated with the context set to the commit in question. This inner expression then uses a context specifier (`.title`) to get the commit title and uses `length` to get the length of the title and compares to see if there are more than fifty characters. If every one of the inner expressions evaluates to `true`, `all` also results in `true`.
 
 There are a handful of other operators, detailed below.
 
@@ -119,7 +119,6 @@ The root context is the initial input (a dictionary) into the rule expression. I
       .email
       .date
       .github_login
-    .message
     .title
     .description
   .comments[]
