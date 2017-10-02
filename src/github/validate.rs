@@ -40,7 +40,6 @@ struct Commit {
     sha: String,
     author: types::Author,
     committer: types::Author,
-    message: String,
     title: String,
     description: String,
 }
@@ -201,7 +200,6 @@ fn fetch_pull_request(
                     date: c.commit.committer.date,
                     github_login: Some(c.committer.login),
                 },
-                message: c.commit.message,
                 title,
                 description,
             })
