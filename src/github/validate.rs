@@ -27,7 +27,7 @@ use worker;
 struct PullRequest {
     user: types::User,
     title: String,
-    body: String,
+    body: Option<String>,
     commits: Vec<Commit>,
     comments: Vec<types::Comment>,
 

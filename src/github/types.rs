@@ -103,7 +103,7 @@ pub struct PullRequest {
     pub user: User,
     pub number: usize,
     pub title: String,
-    pub body: String,
+    pub body: Option<String>,
     pub head: CommitReference,
 }
 
