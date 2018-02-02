@@ -15,7 +15,7 @@
 use chrono::prelude::*;
 use expr::ast::Value;
 
-#[derive(Clone, Deserialize, Value)]
+#[derive(Deserialize, Value)]
 pub struct Author {
     pub name: String,
     pub email: String,
@@ -28,7 +28,7 @@ pub struct Collaborator {
     pub permission: Permission,
 }
 
-#[derive(Clone, Deserialize, Value)]
+#[derive(Deserialize, Value)]
 pub struct Comment {
     pub user: User,
     pub body: String,
@@ -109,7 +109,7 @@ pub struct Repository {
     pub name: String,
 }
 
-#[derive(Clone, Debug, Deserialize, Value)]
+#[derive(Debug, Deserialize, Value)]
 pub struct User {
     pub login: String,
 }

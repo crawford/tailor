@@ -23,7 +23,7 @@ use github::types;
 use serde_yaml;
 use worker;
 
-#[derive(Clone, Value)]
+#[derive(Value)]
 struct PullRequest {
     user: types::User,
     title: String,
@@ -34,7 +34,7 @@ struct PullRequest {
     #[value(hidden)] head_sha: String,
 }
 
-#[derive(Clone, Value)]
+#[derive(Value)]
 struct Commit {
     sha: String,
     author: types::Author,
@@ -49,7 +49,7 @@ pub fn pull_request(job: &worker::PullRequestJob, client: &Github) -> Result<Vec
     let exemptions = find_exemptions(client, &job.owner, &job.repo, &pr)?;
 
     let mut failures = Vec::new();
-    let input = pr.clone().into();
+    let input = pr.into();
     for rule in repo.rules
         .iter()
         .filter(|rule| !exemptions.contains(&rule.name))
