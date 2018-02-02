@@ -88,14 +88,10 @@ pub struct Event {
 
 #[derive(Deserialize, PartialEq)]
 pub enum Permission {
-    #[serde(rename = "admin")]
-    Admin,
-    #[serde(rename = "write")]
-    Write,
-    #[serde(rename = "read")]
-    Read,
-    #[serde(rename = "none")]
-    None,
+    #[serde(rename = "admin")] Admin,
+    #[serde(rename = "write")] Write,
+    #[serde(rename = "read")] Read,
+    #[serde(rename = "none")] None,
 }
 
 #[derive(Debug, Deserialize)]
@@ -103,7 +99,7 @@ pub struct PullRequest {
     pub user: User,
     pub number: usize,
     pub title: String,
-    pub body: String,
+    pub body: Option<String>,
     pub head: CommitReference,
 }
 

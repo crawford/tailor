@@ -42,11 +42,10 @@ macro_rules! expr {
 pub fn eval(expression: &str, input: &Value) -> Result<bool> {
     debug!("Evaluating expression: {}", expression);
     match eval_expr(
-        ast::parse(expression).chain_err(
-            || "Failed to parse expression",
-        )?,
+        ast::parse(expression).chain_err(|| "Failed to parse expression")?,
         input,
-    ).chain_err(|| "Failed to evaluate expression")? {
+    ).chain_err(|| "Failed to evaluate expression")?
+    {
         Value::Boolean(b) => Ok(b),
         value => {
             warn!("Expression evaluated to {:?}", value);
@@ -60,40 +59,33 @@ fn eval_expr(expr: Expr, context: &Value) -> Result<Value> {
     let result = match expr {
         Expr::Value(val) => Ok(val),
         Expr::Operation(Operation::Equal(a, b)) => Ok(Value::Boolean(
-            eval_expr(*a, context)? ==
-                eval_expr(*b, context)?,
+            eval_expr(*a, context)? == eval_expr(*b, context)?,
         )),
         Expr::Operation(Operation::LessThan(a, b)) => Ok(Value::Boolean(
-            expr!(*a, context, Value::Numeral) <
-                expr!(*b, context, Value::Numeral),
+            expr!(*a, context, Value::Numeral) < expr!(*b, context, Value::Numeral),
         )),
         Expr::Operation(Operation::GreaterThan(a, b)) => Ok(Value::Boolean(
-            expr!(*a, context, Value::Numeral) >
-                expr!(*b, context, Value::Numeral),
+            expr!(*a, context, Value::Numeral) > expr!(*b, context, Value::Numeral),
         )),
         Expr::Operation(Operation::And(a, b)) => Ok(Value::Boolean(
-            expr!(*a, context, Value::Boolean) &&
-                expr!(*b, context, Value::Boolean),
+            expr!(*a, context, Value::Boolean) && expr!(*b, context, Value::Boolean),
         )),
         Expr::Operation(Operation::Or(a, b)) => Ok(Value::Boolean(
-            expr!(*a, context, Value::Boolean) ||
-                expr!(*b, context, Value::Boolean),
+            expr!(*a, context, Value::Boolean) || expr!(*b, context, Value::Boolean),
         )),
         Expr::Operation(Operation::Xor(a, b)) => Ok(Value::Boolean(
-            expr!(*a, context, Value::Boolean) ^
-                expr!(*b, context, Value::Boolean),
+            expr!(*a, context, Value::Boolean) ^ expr!(*b, context, Value::Boolean),
         )),
-        Expr::Operation(Operation::Not(a)) => Ok(
-            Value::Boolean(!expr!(*a, context, Value::Boolean)),
-        ),
+        Expr::Operation(Operation::Not(a)) => {
+            Ok(Value::Boolean(!expr!(*a, context, Value::Boolean)))
+        }
         Expr::Operation(Operation::All(list, condition)) => {
             for elem in expr!(*list, context, Value::List) {
                 if !expr!(
                     *condition.clone(),
                     &eval_expr(elem, context)?,
                     Value::Boolean
-                )
-                {
+                ) {
                     return Ok(Value::Boolean(false));
                 }
             }
@@ -105,8 +97,7 @@ fn eval_expr(expr: Expr, context: &Value) -> Result<Value> {
                     *condition.clone(),
                     &eval_expr(elem, context)?,
                     Value::Boolean
-                )
-                {
+                ) {
                     return Ok(Value::Boolean(true));
                 }
             }
@@ -131,35 +122,27 @@ fn eval_expr(expr: Expr, context: &Value) -> Result<Value> {
             }
             Ok(Value::List(result))
         }
-        Expr::Operation(Operation::Length(a)) => {
-            Ok(Value::Numeral(
-                expr!(*a, context, Value::List: len(), Value::String: len()),
-            ))
-        }
-        Expr::Operation(Operation::Test(term, pattern)) => {
-            Ok(Value::Boolean(
-                Regex::new(&expr!(*pattern, context, Value::String))?
-                    .is_match(&expr!(*term, context, Value::String)),
-            ))
-        }
-        Expr::Operation(Operation::Lines(a)) => {
-            Ok(Value::List(
-                expr!(*a, context, Value::String)
-                    .lines()
-                    .map(|s| Expr::Value(Value::String(s.into())))
-                    .collect::<Vec<_>>(),
-            ))
-        }
+        Expr::Operation(Operation::Length(a)) => Ok(Value::Numeral(
+            expr!(*a, context, Value::List: len(), Value::String: len()),
+        )),
+        Expr::Operation(Operation::Test(term, pattern)) => Ok(Value::Boolean(
+            Regex::new(&expr!(*pattern, context, Value::String))?
+                .is_match(&expr!(*term, context, Value::String)),
+        )),
+        Expr::Operation(Operation::Lines(a)) => Ok(Value::List(
+            expr!(*a, context, Value::String)
+                .lines()
+                .map(|s| Expr::Value(Value::String(s.into())))
+                .collect::<Vec<_>>(),
+        )),
         Expr::Operation(Operation::Context(path)) => {
             let mut context = context;
             for elem in path.split('.') {
                 match (elem, context) {
-                    (path, &Value::Dictionary(ref map)) => {
-                        match map.get(path) {
-                            Some(val) => context = val,
-                            None => Err("No such key")?,
-                        }
-                    }
+                    (path, &Value::Dictionary(ref map)) => match map.get(path) {
+                        Some(val) => context = val,
+                        None => Err("No such key")?,
+                    },
                     ("", _) => break,
                     _ => Err("Invalid type")?,
                 }

@@ -28,18 +28,16 @@ pub trait TryExecute: Executor {
         Self: Sized,
     {
         match self.execute::<serde_json::Value>() {
-            Ok((_, StatusCode::Ok, Some(response))) |
-            Ok((_, StatusCode::Created, Some(response))) => {
+            Ok((_, StatusCode::Ok, Some(response)))
+            | Ok((_, StatusCode::Created, Some(response))) => {
                 serde_json::from_value(response).chain_err(|| "Failed to parse response")
             }
-            Ok((_, _, Some(response))) => {
-                serde_json::from_value::<ErrorResponse>(response)
-                    .chain_err(|| "Failed to parse error response")
-                    .and_then(|error| {
-                        debug!("Failed to complete request: {:?}", error);
-                        Err(error.message.into())
-                    })
-            }
+            Ok((_, _, Some(response))) => serde_json::from_value::<ErrorResponse>(response)
+                .chain_err(|| "Failed to parse error response")
+                .and_then(|error| {
+                    debug!("Failed to complete request: {:?}", error);
+                    Err(error.message.into())
+                }),
             Ok((_, _, None)) => Err("Received error response from github with no message".into()),
             Err(err) => Err(err).chain_err(|| "Failed to execute request"),
         }.or_else(|err| {

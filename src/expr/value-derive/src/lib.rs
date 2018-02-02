@@ -21,19 +21,17 @@ use proc_macro::TokenStream;
 
 #[proc_macro_derive(Value, attributes(value))]
 pub fn value(input: TokenStream) -> TokenStream {
-    let ast = syn::parse_derive_input(&input.to_string()).unwrap();
+    let ast: syn::DeriveInput = syn::parse(input).unwrap();
     let name = ast.ident;
 
-    let body = if let syn::Body::Struct(syn::VariantData::Struct(fields)) = ast.body {
+    let body = if let syn::Data::Struct(syn::DataStruct{fields: syn::Fields::Named(syn::FieldsNamed{named: fields, ..}), ..}) = ast.data {
         let inserts: Vec<quote::Tokens> = fields
             .iter()
             .filter_map(|field| {
-                let hidden = field.attrs.iter().any(|attr| match attr.value {
-                    syn::MetaItem::List(ref ident, ref values) if ident == "value" => {
-                        values.into_iter().any(|value| match value {
-                            &syn::NestedMetaItem::MetaItem(syn::MetaItem::Word(ref ident)) => {
-                                ident == "hidden"
-                            }
+                let hidden = field.attrs.iter().any(|attr| match attr.interpret_meta() {
+                    Some(syn::Meta::List(syn::MetaList{ident, ref nested, ..})) if ident == "value" => {
+                        nested.into_iter().any(|value| match value {
+                            &syn::NestedMeta::Meta(syn::Meta::Word(ref ident)) => ident == "hidden",
                             _ => false,
                         })
                     }
@@ -68,6 +66,5 @@ pub fn value(input: TokenStream) -> TokenStream {
                 #body
             }
         }
-    }).parse()
-        .unwrap()
+    }).into()
 }

@@ -33,9 +33,9 @@ pub struct Worker {
 impl Worker {
     pub fn queue_pull_request(&self, job: PullRequestJob) -> Result<()> {
         debug!("Queuing pull request {:?}", job);
-        self.tx.send(Job::PullRequest(job)).chain_err(
-            || "Failed to queue pull request",
-        )
+        self.tx
+            .send(Job::PullRequest(job))
+            .chain_err(|| "Failed to queue pull request")
     }
 
     pub fn queue_status(
@@ -104,14 +104,10 @@ pub struct Status {
 
 #[derive(Debug, Serialize)]
 pub enum State {
-    #[serde(rename = "success")]
-    Success,
-    #[serde(rename = "pending")]
-    Pending,
-    #[serde(rename = "failure")]
-    Failure,
-    #[serde(rename = "error")]
-    Error,
+    #[serde(rename = "success")] Success,
+    #[serde(rename = "pending")] Pending,
+    #[serde(rename = "failure")] Failure,
+    #[serde(rename = "error")] Error,
 }
 
 pub struct Commit {
@@ -178,7 +174,7 @@ fn process_pull_request(
 ) {
     debug!("Processing pull request {:?}", job);
 
-    fn create_status_url(failures: String, address: &str) -> Result<String> {
+    fn create_status_url(failures: &str, address: &str) -> Result<String> {
         let compressed = snap::Encoder::new()
             .compress_vec(failures.as_bytes())
             .chain_err(|| "Failed to compress message")?;
@@ -194,15 +190,17 @@ fn process_pull_request(
         Ok(ref failures) if failures.is_empty() => {
             Ok((State::Success, "All checks passed".into(), None))
         }
-        Ok(failures) => {
-            create_status_url(failures.join("\n"), address).map(|url| {
-                (State::Failure, "One or more checks failed".into(), Some(url))
-            })
-        }
+        Ok(failures) => create_status_url(&failures.join("\n"), address).map(|url| {
+            (
+                State::Failure,
+                "One or more checks failed".into(),
+                Some(url),
+            )
+        }),
         Err(err) => {
             warn!("Failed to evaluate rules: {}", err);
 
-            create_status_url(err.to_string(), address).map(|url| {
+            create_status_url(&err.to_string(), address).map(|url| {
                 (State::Error, "Failed to evaluate rules".into(), Some(url))
             })
         }
@@ -223,8 +221,7 @@ fn process_pull_request(
             repo: job.repo,
             sha: job.head_sha,
         },
-    )
-    {
+    ) {
         error!("Failed to queue validation status: {}", err);
     }
 }
