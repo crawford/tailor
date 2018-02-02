@@ -64,7 +64,7 @@ pub fn pull_request(job: &worker::PullRequestJob, client: &Github) -> Result<Vec
         })?;
 
         if !result {
-            failures.push(format!("Failed {} ({})", rule.name, rule.description))
+            failures.push(format!("Failed {} ({}) on {}", rule.name, rule.description, input))
         }
     }
     Ok(failures)
