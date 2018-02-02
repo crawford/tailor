@@ -35,10 +35,10 @@ pub fn handle_event(req: &mut Request) -> IronResult<Response> {
         serde_json::from_str(&body)
     }.map_err(|err| {
         error!("Failed to parse GitHub request: {}", err);
-        IronError::new(err, (
-            status::InternalServerError,
-            "Failed to parse response body",
-        ))
+        IronError::new(
+            err,
+            (status::InternalServerError, "Failed to parse response body"),
+        )
     })?;
 
     info!("Received GitHub event: {:?}", event);
@@ -82,15 +82,11 @@ pub fn handle_event(req: &mut Request) -> IronResult<Response> {
             repo: event.repository.name.clone(),
             sha: pull_request.head.sha.clone(),
         },
-    )
-    {
+    ) {
         error!("Failed to queue status: {}", err);
         return Ok(Response::with((
             status::InternalServerError,
-            format!(
-                "Failed to send struct to processing thread: {}",
-                err
-            ),
+            format!("Failed to send struct to processing thread: {}", err),
         )));
     }
 
@@ -99,15 +95,11 @@ pub fn handle_event(req: &mut Request) -> IronResult<Response> {
         repo: event.repository.name,
         number: pull_request.number,
         head_sha: pull_request.head.sha,
-    })
-    {
+    }) {
         error!("Failed to queue pull request: {}", err);
         return Ok(Response::with((
             status::InternalServerError,
-            format!(
-                "Failed to send struct to processing thread: {}",
-                err
-            ),
+            format!("Failed to send struct to processing thread: {}", err),
         )));
     }
 
@@ -119,15 +111,16 @@ pub fn handle_event(req: &mut Request) -> IronResult<Response> {
 pub fn handle_status(req: &mut Request) -> IronResult<Response> {
     fn decode_message(params: &Map) -> Result<String> {
         match params.find(&["snap"]) {
-            Some(&Value::String(ref msg)) => {
-                Ok(String::from_utf8(snap::Decoder::new()
-                    .decompress_vec(
-                        base64::decode_config(msg, base64::URL_SAFE_NO_PAD)
-                            .chain_err(|| "Failed to decode message")?
-                            .as_slice())
-                        .chain_err(|| "Failed to decompress message")?)
-                    .chain_err(|| "Not valid UTF-8 data")?)
-            }
+            Some(&Value::String(ref msg)) => Ok(String::from_utf8(snap::Decoder::new()
+                .decompress_vec(
+                    base64::decode_config(msg, base64::URL_SAFE_NO_PAD)
+                        .chain_err(|| "Failed to decode message")?
+                        .as_slice(),
+                )
+                .chain_err(|| "Failed to decompress message")?)
+                .chain_err(
+                || "Not valid UTF-8 data",
+            )?),
             _ => Err("No message specified".into()),
         }
     }
@@ -143,17 +136,15 @@ pub fn handle_status(req: &mut Request) -> IronResult<Response> {
     };
 
     match decode_message(params) {
-        Ok(msg) => {
-            Ok(Response::with((
-                status::Ok,
-                Template::new(
-                    "status",
-                    &json!({
+        Ok(msg) => Ok(Response::with((
+            status::Ok,
+            Template::new(
+                "status",
+                &json!({
                         "statuses": msg.lines().collect::<Vec<_>>(),
                     }),
-                ),
-            )))
-        }
+            ),
+        ))),
         Err(err) => {
             error!("Failed to decode message: {}", err);
             Ok(Response::with(

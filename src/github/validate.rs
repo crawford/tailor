@@ -31,8 +31,7 @@ struct PullRequest {
     commits: Vec<Commit>,
     comments: Vec<types::Comment>,
 
-    #[value(hidden)]
-    head_sha: String,
+    #[value(hidden)] head_sha: String,
 }
 
 #[derive(Clone, Value)]
@@ -51,9 +50,9 @@ pub fn pull_request(job: &worker::PullRequestJob, client: &Github) -> Result<Vec
 
     let mut failures = Vec::new();
     let input = pr.clone().into();
-    for rule in repo.rules.iter().filter(
-        |rule| !exemptions.contains(&rule.name),
-    )
+    for rule in repo.rules
+        .iter()
+        .filter(|rule| !exemptions.contains(&rule.name))
     {
         let result = expr::eval(&rule.expression, &input).chain_err(|| {
             format!(
@@ -118,17 +117,16 @@ fn find_exemptions(
                     "Fetching repo collaborator status for {}",
                     comment.user.login
                 );
-                let collaborator: types::Collaborator =
-                    client
-                        .get()
-                        .repos()
-                        .owner(owner)
-                        .repo(repo)
-                        .collaborators()
-                        .username(&comment.user.login)
-                        .permission()
-                        .try_execute()
-                        .chain_err(|| "Failed to fetch collaborator data")?;
+                let collaborator: types::Collaborator = client
+                    .get()
+                    .repos()
+                    .owner(owner)
+                    .repo(repo)
+                    .collaborators()
+                    .username(&comment.user.login)
+                    .permission()
+                    .try_execute()
+                    .chain_err(|| "Failed to fetch collaborator data")?;
                 if collaborator.permission == types::Permission::Admin {
                     exemptions.push(disabled_check.trim().to_string());
                 }
@@ -158,17 +156,16 @@ fn fetch_pull_request(
 
     let commits = {
         trace!("Fetching pull request commits");
-        let raw_commits: Vec<types::Commit> =
-            client
-                .get()
-                .repos()
-                .owner(owner)
-                .repo(repo)
-                .pulls()
-                .number(&number.to_string())
-                .commits()
-                .try_execute()
-                .chain_err(|| "Failed to fetch pull request commits")?;
+        let raw_commits: Vec<types::Commit> = client
+            .get()
+            .repos()
+            .owner(owner)
+            .repo(repo)
+            .pulls()
+            .number(&number.to_string())
+            .commits()
+            .try_execute()
+            .chain_err(|| "Failed to fetch pull request commits")?;
 
         let mut commits = Vec::new();
         for c in raw_commits {
@@ -179,7 +176,7 @@ fn fetch_pull_request(
                     Some("") | None => {}
                     _ => return Err(
                         "Malformed commit message (no empty line between title and description)"
-                        .into(),
+                            .into(),
                     ),
                 }
                 let description = lines.collect::<Vec<_>>().as_slice().join("\n");

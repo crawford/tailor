@@ -17,8 +17,6 @@ extern crate chrono;
 #[macro_use]
 extern crate clap;
 #[macro_use]
-extern crate value_derive;
-#[macro_use]
 extern crate error_chain;
 extern crate github_rs;
 extern crate handlebars_iron;
@@ -39,6 +37,8 @@ extern crate serde_derive;
 extern crate serde_json;
 extern crate serde_yaml;
 extern crate snap;
+#[macro_use]
+extern crate value_derive;
 
 mod config;
 mod errors;
@@ -47,7 +47,7 @@ mod github;
 mod routes;
 mod worker;
 
-use clap::{Arg, App};
+use clap::{App, Arg};
 use errors::*;
 use handlebars_iron::{DirectorySource, HandlebarsEngine};
 use iron::prelude::*;
@@ -89,9 +89,7 @@ fn run() -> Result<()> {
                 .short("m")
                 .long("templates")
                 .takes_value(true)
-                .help(
-                    "The path to the templates, relative to the working directory",
-                )
+                .help("The path to the templates, relative to the working directory")
                 .default_value("assets/templates"),
         )
         .arg(
@@ -133,9 +131,9 @@ fn run() -> Result<()> {
         ".hbs",
     )));
 
-    engine.reload().chain_err(
-        || "Failed to start templating engine",
-    )?;
+    engine
+        .reload()
+        .chain_err(|| "Failed to start templating engine")?;
 
     let mut chain = Chain::new(router);
     chain.link(persistent::Write::<worker::Worker>::both(worker));
