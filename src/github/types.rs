@@ -50,9 +50,10 @@ pub struct CommitBody {
     pub message: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Value)]
 pub struct CommitReference {
     pub sha: String,
+    pub label: String,
     pub user: User,
 }
 
@@ -100,6 +101,7 @@ pub struct PullRequest {
     pub number: usize,
     pub title: String,
     pub body: Option<String>,
+    pub base: CommitReference,
     pub head: CommitReference,
 }
 

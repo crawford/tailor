@@ -30,8 +30,8 @@ struct PullRequest {
     body: Option<String>,
     commits: Vec<Commit>,
     comments: Vec<types::Comment>,
-
-    #[value(hidden)] head_sha: String,
+    base: types::CommitReference,
+    head: types::CommitReference,
 }
 
 #[derive(Value)]
@@ -84,7 +84,7 @@ fn fetch_repo_config(
         .repo(repo)
         .contents()
         .path(".github/tailor.yaml")
-        .reference(&pr.head_sha)
+        .reference(&pr.head.sha)
         .try_execute()
         .chain_err(|| {
             format!("Failed to fetch repo configuration for {}/{}", owner, repo)
@@ -220,7 +220,8 @@ fn fetch_pull_request(
         user: pr.user,
         title: pr.title,
         body: pr.body,
-        head_sha: pr.head.sha,
+        base: pr.base,
+        head: pr.head,
         commits,
         comments,
     })
