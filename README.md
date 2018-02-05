@@ -126,6 +126,16 @@ The root context is the initial input (a dictionary) into the rule expression. I
       .login
     .body
     .created_at
+  .base
+    .sha
+    .label
+    .user
+      .login
+  .head
+    .sha
+    .label
+    .user
+      .login
 ```
 
 ### Admin Commands ###

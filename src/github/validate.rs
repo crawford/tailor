@@ -23,18 +23,18 @@ use github::types;
 use serde_yaml;
 use worker;
 
-#[derive(Clone, Value)]
+#[derive(Value)]
 struct PullRequest {
     user: types::User,
     title: String,
     body: Option<String>,
     commits: Vec<Commit>,
     comments: Vec<types::Comment>,
-
-    #[value(hidden)] head_sha: String,
+    base: types::CommitReference,
+    head: types::CommitReference,
 }
 
-#[derive(Clone, Value)]
+#[derive(Value)]
 struct Commit {
     sha: String,
     author: types::Author,
@@ -49,7 +49,7 @@ pub fn pull_request(job: &worker::PullRequestJob, client: &Github) -> Result<Vec
     let exemptions = find_exemptions(client, &job.owner, &job.repo, &pr)?;
 
     let mut failures = Vec::new();
-    let input = pr.clone().into();
+    let input = pr.into();
     for rule in repo.rules
         .iter()
         .filter(|rule| !exemptions.contains(&rule.name))
@@ -84,7 +84,7 @@ fn fetch_repo_config(
         .repo(repo)
         .contents()
         .path(".github/tailor.yaml")
-        .reference(&pr.head_sha)
+        .reference(&pr.head.sha)
         .try_execute()
         .chain_err(|| {
             format!("Failed to fetch repo configuration for {}/{}", owner, repo)
@@ -220,7 +220,8 @@ fn fetch_pull_request(
         user: pr.user,
         title: pr.title,
         body: pr.body,
-        head_sha: pr.head.sha,
+        base: pr.base,
+        head: pr.head,
         commits,
         comments,
     })
