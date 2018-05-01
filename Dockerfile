@@ -8,7 +8,7 @@ RUN cargo build --target=x86_64-unknown-linux-musl --release
 
 FROM scratch
 WORKDIR /opt/tailor/bin
-EXPOSE 80
+EXPOSE 8080
 ENTRYPOINT ["./tailor"]
 COPY --from=build tailor/target/x86_64-unknown-linux-musl/release/tailor .
 COPY --from=build tailor/assets assets
