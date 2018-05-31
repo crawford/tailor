@@ -14,8 +14,8 @@
 
 use base64;
 use errors::*;
-use github::{self, TryExecute};
 use github::types::Empty;
+use github::{self, TryExecute};
 use github_rs::client;
 use iron;
 use snap;
@@ -86,10 +86,7 @@ impl fmt::Debug for PullRequestJob {
         write!(
             f,
             "Pull Request {}/{}: {} ({})",
-            self.owner,
-            self.repo,
-            self.number,
-            self.head_sha
+            self.owner, self.repo, self.number, self.head_sha
         )
     }
 }
@@ -104,10 +101,14 @@ pub struct Status {
 
 #[derive(Debug, Serialize)]
 pub enum State {
-    #[serde(rename = "success")] Success,
-    #[serde(rename = "pending")] Pending,
-    #[serde(rename = "failure")] Failure,
-    #[serde(rename = "error")] Error,
+    #[serde(rename = "success")]
+    Success,
+    #[serde(rename = "pending")]
+    Pending,
+    #[serde(rename = "failure")]
+    Failure,
+    #[serde(rename = "error")]
+    Error,
 }
 
 pub struct Commit {
@@ -149,8 +150,7 @@ pub fn spawn(access_token: String, address: String) -> Result<Worker> {
 fn process_status(client: &client::Github, job: StatusJob) {
     debug!(
         "Processing status {:?} for {:?}",
-        job.status.state,
-        job.commit
+        job.status.state, job.commit
     );
 
     if let Err(err) = client
@@ -200,9 +200,8 @@ fn process_pull_request(
         Err(err) => {
             warn!("Failed to evaluate rules: {}", err);
 
-            create_status_url(&err.to_string(), address).map(|url| {
-                (State::Error, "Failed to evaluate rules".into(), Some(url))
-            })
+            create_status_url(&err.to_string(), address)
+                .map(|url| (State::Error, "Failed to evaluate rules".into(), Some(url)))
         }
     } {
         Ok(status) => status,
