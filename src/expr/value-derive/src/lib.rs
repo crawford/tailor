@@ -25,11 +25,11 @@ pub fn value(input: TokenStream) -> TokenStream {
     let name = ast.ident;
 
     let body = if let syn::Data::Struct(syn::DataStruct{fields: syn::Fields::Named(syn::FieldsNamed{named: fields, ..}), ..}) = ast.data {
-        let inserts: Vec<quote::Tokens> = fields
+        let inserts: Vec<_> = fields
             .iter()
             .filter_map(|field| {
                 let hidden = field.attrs.iter().any(|attr| match attr.interpret_meta() {
-                    Some(syn::Meta::List(syn::MetaList{ident, ref nested, ..})) if ident == "value" => {
+                    Some(syn::Meta::List(syn::MetaList{ref ident, ref nested, ..})) if ident == "value" => {
                         nested.into_iter().any(|value| match value {
                             &syn::NestedMeta::Meta(syn::Meta::Word(ref ident)) => ident == "hidden",
                             _ => false,
