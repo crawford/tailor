@@ -6,14 +6,13 @@ authors = ["Alex Crawford <alex.crawford@coreos.com>"]
 [dependencies]
 base64 = "*"
 chrono = { version = "*", features = ["serde"] }
-clap = "*"
 value-derive = { path = "src/expr/value-derive" }
+env_logger = "*"
 error-chain = "*"
 github-rs = "*"
 handlebars-iron = "*"
 iron = "*"
 log = "*"
-loggerv = "*"
 nom = "*"
 params = "*"
 persistent = "*"
@@ -24,6 +23,7 @@ serde_derive = "*"
 serde_json = "*"
 serde_yaml = "*"
 snap = "*"
+structopt = "*"
 
 [features]
 watch = ["handlebars-iron/watch"]

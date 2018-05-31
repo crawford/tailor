@@ -14,8 +14,7 @@
 
 extern crate base64;
 extern crate chrono;
-#[macro_use]
-extern crate clap;
+extern crate env_logger;
 #[macro_use]
 extern crate error_chain;
 extern crate github_rs;
@@ -23,7 +22,6 @@ extern crate handlebars_iron;
 extern crate iron;
 #[macro_use]
 extern crate log;
-extern crate loggerv;
 #[macro_use]
 extern crate nom;
 extern crate params;
@@ -38,6 +36,8 @@ extern crate serde_json;
 extern crate serde_yaml;
 extern crate snap;
 #[macro_use]
+extern crate structopt;
+#[macro_use]
 extern crate value_derive;
 
 mod config;
@@ -47,79 +47,62 @@ mod github;
 mod routes;
 mod worker;
 
-use clap::{App, Arg};
 use errors::*;
 use handlebars_iron::{DirectorySource, HandlebarsEngine};
 use iron::prelude::*;
+use log::LevelFilter;
 use router::Router;
-use std::str::FromStr;
+use std::net::{IpAddr, SocketAddr};
+use std::path::{Path, PathBuf};
+use structopt::StructOpt;
+
+#[derive(StructOpt)]
+struct Options {
+    #[structopt(long = "address", default_value = "0.0.0.0")]
+    /// Address on which the server will listen
+    pub address: IpAddr,
+
+    #[structopt(long = "port", default_value = "8080")]
+    /// Port to which the server will bind
+    pub port: u16,
+
+    #[structopt(long = "server-address", default_value = "localhost:8080")]
+    /// The socket address used to reach the server
+    pub server: SocketAddr,
+
+    #[structopt(long = "templates", default_value = "assets/templates", parse(from_os_str))]
+    /// The path to the templates, relative to the working directory
+    pub templates: PathBuf,
+
+    #[structopt(long = "token")]
+    /// The GitHub access token to use for requests
+    pub token: String,
+
+    #[structopt(short = "v", parse(from_occurrences))]
+    /// Verbosity level
+    pub verbosity: u64,
+}
 
 quick_main!(run);
 
 fn run() -> Result<()> {
-    let args = App::new(crate_name!())
-        .version(crate_version!())
-        .about(crate_description!())
-        .arg(
-            Arg::with_name("ADDRESS")
-                .short("a")
-                .long("address")
-                .takes_value(true)
-                .help("The address on which to listen")
-                .default_value("0.0.0.0"),
-        )
-        .arg(
-            Arg::with_name("PORT")
-                .short("p")
-                .long("port")
-                .takes_value(true)
-                .help("The port on which to bind")
-                .default_value("8080"),
-        )
-        .arg(
-            Arg::with_name("SERVER")
-                .short("s")
-                .long("server-address")
-                .takes_value(true)
-                .help("The server address of the instance")
-                .default_value("localhost:8080"),
-        )
-        .arg(
-            Arg::with_name("TEMPLATES")
-                .short("m")
-                .long("templates")
-                .takes_value(true)
-                .help("The path to the templates, relative to the working directory")
-                .default_value("assets/templates"),
-        )
-        .arg(
-            Arg::with_name("TOKEN")
-                .short("t")
-                .long("token")
-                .takes_value(true)
-                .required(true)
-                .help("The GitHub access token to use for requests"),
-        )
-        .arg(
-            Arg::with_name("VERBOSITY")
-                .short("v")
-                .long("verbose")
-                .multiple(true)
-                .help("The level of verbosity"),
-        )
-        .get_matches();
+    let opts = Options::from_args();
 
-    loggerv::init_with_verbosity(args.occurrences_of("VERBOSITY")).unwrap();
-
-    let address = args.value_of("ADDRESS").expect("address flag");
-    let port = u16::from_str(args.value_of("PORT").expect("port flag"))
-        .chain_err(|| "Failed to parse port")?;
+    env_logger::Builder::new()
+        .filter(
+            Some(module_path!()),
+            match opts.verbosity {
+                0 => LevelFilter::Warn,
+                1 => LevelFilter::Info,
+                2 => LevelFilter::Debug,
+                _ => LevelFilter::Trace,
+            },
+        )
+        .init();
 
     debug!("Spawning worker thread");
-    let worker = worker::spawn(
-        args.value_of("TOKEN").expect("token").to_string(),
-        args.value_of("SERVER").expect("server").to_string(),
-    ).chain_err(|| "Failed to create status worker")?;
+    let worker = worker::spawn(opts.token, opts.server.to_string())
+        .chain_err(|| "Failed to create status worker")?;
 
     let mut router = Router::new();
     router.post("/hook", routes::handle_event, "github_webhook");
@@ -127,8 +110,8 @@ fn run() -> Result<()> {
 
     let mut engine = HandlebarsEngine::new();
     engine.add(Box::new(DirectorySource::new(
-        args.value_of("TEMPLATES").expect("templates"),
-        ".hbs",
+        opts.templates,
+        Path::new(".hbs").to_path_buf(),
     )));
 
     engine
@@ -141,7 +124,7 @@ fn run() -> Result<()> {
 
     debug!("Starting web server");
     Iron::new(chain)
-        .http((address, port))
+        .http((opts.address, opts.port))
         .chain_err(|| "Could not start server")
         .map(|_| ())
 }
