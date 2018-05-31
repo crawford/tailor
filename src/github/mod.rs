@@ -17,8 +17,8 @@ pub mod validate;
 
 use errors::*;
 use github::types::ErrorResponse;
-use github_rs::StatusCode;
 use github_rs::client::Executor;
+use github_rs::StatusCode;
 use serde::de::DeserializeOwned;
 use serde_json;
 

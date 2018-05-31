@@ -17,9 +17,9 @@ use config;
 use errors::*;
 use expr;
 use expr::ast::Value;
+use github::types;
 use github::TryExecute;
 use github_rs::client::Github;
-use github::types;
 use serde_yaml;
 use worker;
 
@@ -57,9 +57,7 @@ pub fn pull_request(job: &worker::PullRequestJob, client: &Github) -> Result<Vec
         let result = expr::eval(&rule.expression, &input).chain_err(|| {
             format!(
                 r#"Failed to run "{}" from "{}/{}""#,
-                rule.name,
-                job.owner,
-                job.repo
+                rule.name, job.owner, job.repo
             )
         })?;
 
@@ -86,13 +84,12 @@ fn fetch_repo_config(
         .path(".github/tailor.yaml")
         .reference(&pr.head.sha)
         .try_execute()
-        .chain_err(|| {
-            format!("Failed to fetch repo configuration for {}/{}", owner, repo)
-        })?;
+        .chain_err(|| format!("Failed to fetch repo configuration for {}/{}", owner, repo))?;
     match config.content {
-        Some(content) => Ok(serde_yaml::from_slice(
-            &base64::decode_config(&content, base64::MIME)?,
-        )?),
+        Some(content) => Ok(serde_yaml::from_slice(&base64::decode_config(
+            &content,
+            base64::MIME,
+        )?)?),
         None => {
             warn!("Repository {}/{} has no tailor configuration", owner, repo);
             Ok(config::Config { rules: Vec::new() })

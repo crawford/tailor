@@ -103,9 +103,10 @@ pub fn handle_event(req: &mut Request) -> IronResult<Response> {
         )));
     }
 
-    Ok(Response::with(
-        (status::Ok, "Sent data to processing thread"),
-    ))
+    Ok(Response::with((
+        status::Ok,
+        "Sent data to processing thread",
+    )))
 }
 
 pub fn handle_status(req: &mut Request) -> IronResult<Response> {
@@ -129,9 +130,10 @@ pub fn handle_status(req: &mut Request) -> IronResult<Response> {
         Ok(params) => params,
         Err(err) => {
             error!("Failed to read /status paramaters: {}", err);
-            return Ok(Response::with(
-                (status::BadRequest, "Parameters are malformed"),
-            ));
+            return Ok(Response::with((
+                status::BadRequest,
+                "Parameters are malformed",
+            )));
         }
     };
 
@@ -147,9 +149,10 @@ pub fn handle_status(req: &mut Request) -> IronResult<Response> {
         ))),
         Err(err) => {
             error!("Failed to decode message: {}", err);
-            Ok(Response::with(
-                (status::BadRequest, "Failed to decode message"),
-            ))
+            Ok(Response::with((
+                status::BadRequest,
+                "Failed to decode message",
+            )))
         }
     }
 }

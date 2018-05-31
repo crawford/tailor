@@ -14,9 +14,9 @@
 
 pub mod ast;
 
+use self::ast::{Expr, Operation, Value};
 use errors::*;
 use regex::Regex;
-use self::ast::{Expr, Operation, Value};
 
 macro_rules! expr {
     ( $expr:expr, $context:expr, $type:path ) => {
@@ -116,18 +116,25 @@ fn eval_expr(expr: Expr, context: &Value) -> Result<Value> {
         Expr::Operation(Operation::Map(list, transform)) => {
             let mut result = Vec::new();
             for elem in expr!(*list, context, Value::List) {
-                result.push(Expr::Value(
-                    eval_expr(*transform.clone(), &eval_expr(elem, context)?)?,
-                ));
+                result.push(Expr::Value(eval_expr(
+                    *transform.clone(),
+                    &eval_expr(elem, context)?,
+                )?));
             }
             Ok(Value::List(result))
         }
-        Expr::Operation(Operation::Length(a)) => Ok(Value::Numeral(
-            expr!(*a, context, Value::List: len(), Value::String: len()),
-        )),
+        Expr::Operation(Operation::Length(a)) => Ok(Value::Numeral(expr!(
+            *a,
+            context,
+            Value::List: len(),
+            Value::String: len()
+        ))),
         Expr::Operation(Operation::Test(term, pattern)) => Ok(Value::Boolean(
-            Regex::new(&expr!(*pattern, context, Value::String))?
-                .is_match(&expr!(*term, context, Value::String)),
+            Regex::new(&expr!(*pattern, context, Value::String))?.is_match(&expr!(
+                *term,
+                context,
+                Value::String
+            )),
         )),
         Expr::Operation(Operation::Lines(a)) => Ok(Value::List(
             expr!(*a, context, Value::String)
@@ -156,8 +163,8 @@ fn eval_expr(expr: Expr, context: &Value) -> Result<Value> {
 
 #[cfg(test)]
 mod test {
-    use std::collections::HashMap;
     use super::*;
+    use std::collections::HashMap;
 
     #[test]
     fn test_eval() {

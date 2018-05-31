@@ -14,10 +14,10 @@
 
 pub mod types;
 
-use errors::*;
-use nom::{self, IResult};
-use std::str::FromStr;
 pub use self::types::*;
+use errors::*;
+use nom::{self, types::CompleteStr, Err};
+use std::str::FromStr;
 
 #[derive(Debug, PartialEq)]
 enum PartialOperation {
@@ -58,21 +58,21 @@ enum InfixOperator {
     Test,
 }
 
-named!(boolean <&str, Expr>,
+named!(boolean <CompleteStr, Expr>,
     alt!(
         tag!("true")  => { |_| Expr::Value(Value::Boolean(true))  } |
         tag!("false") => { |_| Expr::Value(Value::Boolean(false)) }
     )
 );
 
-named!(numeral <&str, Expr>,
+named!(numeral <CompleteStr, Expr>,
     map!(
         flat_map!(call!(nom::digit), parse_to!(usize)),
         |n| { Expr::Value(Value::Numeral(n)) }
     )
 );
 
-named!(list <&str, Expr>,
+named!(list <CompleteStr, Expr>,
     map!(
         delimited!(
             char!('['),
@@ -83,19 +83,19 @@ named!(list <&str, Expr>,
     )
 );
 
-named!(string <&str, Expr>,
+named!(string <CompleteStr, Expr>,
     map!(
         delimited!(
             char!('"'),
             fold_many0!(
                 alt!(
-                    map!(tag!(r#"\""#), |_| r#"""#) |
-                    map!(tag!(r#"\\"#), |_| r#"\"#) |
+                    map!(tag!(r#"\""#), |_| CompleteStr(r#"""#)) |
+                    map!(tag!(r#"\\"#), |_| CompleteStr(r#"\"#)) |
                     is_not!(r#""\"#)
                 ),
                 String::new(),
-                |acc: String, s: &str| {
-                    acc + s
+                |acc: String, s: CompleteStr| {
+                    acc + &s
                 }
             ),
             char!('"')
@@ -104,20 +104,20 @@ named!(string <&str, Expr>,
     )
 );
 
-named!(context <&str, Expr>,
+named!(context <CompleteStr, Expr>,
     map!(
         map_res!(
             preceded!(
                 char!('.'),
                 take_while!(|c: char| { c.is_alphabetic() || c == '.' })
             ),
-            FromStr::from_str
+            |c: CompleteStr| { FromStr::from_str(&c) }
         ),
         |s: String| { Expr::Operation(Operation::Context(s)) }
     )
 );
 
-named!(nested <&str, Expr>,
+named!(nested <CompleteStr, Expr>,
     delimited!(
         char!('('),
         expr,
@@ -125,11 +125,11 @@ named!(nested <&str, Expr>,
     )
 );
 
-named!(value <&str, Expr>, ws!(
+named!(value <CompleteStr, Expr>, ws!(
     alt!(boolean | numeral | list | string | context | nested)
 ));
 
-named!(operation0 <&str, PartialOperation>, ws!(
+named!(operation0 <CompleteStr, PartialOperation>, ws!(
     alt!(
         tag!("not")    => { |_| PartialOperation::Not    } |
         tag!("length") => { |_| PartialOperation::Length } |
@@ -137,7 +137,7 @@ named!(operation0 <&str, PartialOperation>, ws!(
     )
 ));
 
-named!(operation1 <&str, PartialOperation>, ws!(
+named!(operation1 <CompleteStr, PartialOperation>, ws!(
     do_parse!(
         op: alt!(
             char!('=') => { |_| InfixOperator::Equal       } |
@@ -175,7 +175,7 @@ named!(operation1 <&str, PartialOperation>, ws!(
     )
 ));
 
-named!(expr <&str, Expr>, ws!(
+named!(expr <CompleteStr, Expr>, ws!(
     do_parse!(
         init: value >>
         exp: fold_many0!(
@@ -209,25 +209,25 @@ named!(expr <&str, Expr>, ws!(
 
 pub fn parse(expression: &str) -> Result<Expr> {
     debug!("Parsing expression: {}", expression);
-    match expr(expression) {
-        IResult::Done("", expr) => {
+    match expr(CompleteStr(expression)) {
+        Ok((CompleteStr(""), expr)) => {
             trace!("Expression parsed as {:?}", expr);
             Ok(expr)
         }
-        IResult::Done(r, _) => {
+        Ok((r, _)) => {
             warn!("Parsing finished with remaining characters: {}", r);
             Err(format!("input remaining: {}", r).into())
         }
-        IResult::Error(err) => {
-            warn!("Parsing error occured: {}", err);
-            Err(format!("error occurred: {}", err).into())
-        }
-        IResult::Incomplete(n) => {
+        Err(Err::Incomplete(n)) => {
             warn!(
                 "Parsing finished prematurely. {:?} more characters expected.",
                 n
             );
             Err(format!("needed more: {:?}", n).into())
+        }
+        Err(err) => {
+            warn!("Parsing error occured: {}", err);
+            Err(format!("error occurred: {}", err).into())
         }
     }
 }
@@ -239,53 +239,56 @@ mod test {
     #[test]
     fn test_value() {
         assert_eq!(
-            value("true"),
-            IResult::Done("", Expr::Value(Value::Boolean(true)))
+            value(CompleteStr("true")),
+            Ok((CompleteStr(""), Expr::Value(Value::Boolean(true))))
         );
         assert_eq!(
-            value("false"),
-            IResult::Done("", Expr::Value(Value::Boolean(false)))
+            value(CompleteStr("false")),
+            Ok((CompleteStr(""), Expr::Value(Value::Boolean(false))))
         );
         assert_eq!(
-            value(" true  "),
-            IResult::Done("", Expr::Value(Value::Boolean(true)))
+            value(CompleteStr(" true  ")),
+            Ok((CompleteStr(""), Expr::Value(Value::Boolean(true))))
         );
         assert_eq!(
-            value("12"),
-            IResult::Done("", Expr::Value(Value::Numeral(12)))
+            value(CompleteStr("12")),
+            Ok((CompleteStr(""), Expr::Value(Value::Numeral(12))))
         );
         assert_eq!(
-            value("  52 "),
-            IResult::Done("", Expr::Value(Value::Numeral(52)))
+            value(CompleteStr("  52 ")),
+            Ok((CompleteStr(""), Expr::Value(Value::Numeral(52))))
         );
         assert_eq!(
-            value("[]"),
-            IResult::Done("", Expr::Value(Value::List(vec![])))
+            value(CompleteStr("[]")),
+            Ok((CompleteStr(""), Expr::Value(Value::List(vec![]))))
         );
         assert_eq!(
-            value("[1 true]"),
-            IResult::Done(
-                "",
+            value(CompleteStr("[1 true]")),
+            Ok((
+                CompleteStr(""),
                 Expr::Value(Value::List(vec![
                     Expr::Value(Value::Numeral(1)),
                     Expr::Value(Value::Boolean(true)),
                 ])),
-            )
+            ))
         );
         assert_eq!(
-            value(r#""""#),
-            IResult::Done("", Expr::Value(Value::String(String::new())))
+            value(CompleteStr(r#""""#)),
+            Ok((CompleteStr(""), Expr::Value(Value::String(String::new()))))
         );
         assert_eq!(
-            value(r#""simple string""#),
-            IResult::Done("", Expr::Value(Value::String("simple string".to_string())))
+            value(CompleteStr(r#""simple string""#)),
+            Ok((
+                CompleteStr(""),
+                Expr::Value(Value::String("simple string".to_string()))
+            ))
         );
         assert_eq!(
-            value(r#""^[A-Za-z\":\\]{,100}$""#),
-            IResult::Done(
-                "",
+            value(CompleteStr(r#""^[A-Za-z\":\\]{,100}$""#)),
+            Ok((
+                CompleteStr(""),
                 Expr::Value(Value::String(r#"^[A-Za-z":\]{,100}$"#.to_string())),
-            )
+            ))
         );
     }
 
@@ -301,12 +304,12 @@ mod test {
         assert_eq!(
             parse("false and true not and true").unwrap(),
             Expr::Operation(Operation::And(
-                Box::new(Expr::Operation(
-                    Operation::Not(Box::new(Expr::Operation(Operation::And(
+                Box::new(Expr::Operation(Operation::Not(Box::new(Expr::Operation(
+                    Operation::And(
                         Box::new(Expr::Value(Value::Boolean(false))),
                         Box::new(Expr::Value(Value::Boolean(true))),
-                    )))),
-                )),
+                    )
+                ))),)),
                 Box::new(Expr::Value(Value::Boolean(true))),
             ))
         );
@@ -328,15 +331,15 @@ mod test {
         );
         assert_eq!(
             parse("(.attr) length").unwrap(),
-            Expr::Operation(Operation::Length(Box::new(
-                Expr::Operation(Operation::Context(String::from("attr"))),
-            )))
+            Expr::Operation(Operation::Length(Box::new(Expr::Operation(
+                Operation::Context(String::from("attr"))
+            ),)))
         );
         assert_eq!(
             parse(".attr length").unwrap(),
-            Expr::Operation(Operation::Length(Box::new(
-                Expr::Operation(Operation::Context(String::from("attr"))),
-            )))
+            Expr::Operation(Operation::Length(Box::new(Expr::Operation(
+                Operation::Context(String::from("attr"))
+            ),)))
         );
         assert_eq!(
             parse(".attr.sub length").unwrap(),
