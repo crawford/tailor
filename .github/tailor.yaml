@@ -1,7 +1,7 @@
 rules:
   - name: commit title
     description: all commit titles must have a scope, be lowercase, and be no more than 50 characters
-    expression:  |-
+    expression: |-
       .commits all(((.title test "^[a-z/*-]+: [[:alnum:] -'./-]+$") and (.title length < 51)) or (.title test "^Revert"))
 
   - name: commit description
