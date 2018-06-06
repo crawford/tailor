@@ -52,7 +52,7 @@ use handlebars_iron::{DirectorySource, HandlebarsEngine};
 use iron::prelude::*;
 use log::LevelFilter;
 use router::Router;
-use std::net::{IpAddr, SocketAddr};
+use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use structopt::StructOpt;
 
@@ -68,7 +68,7 @@ struct Options {
 
     #[structopt(long = "server-address", default_value = "localhost:8080")]
     /// The socket address used to reach the server
-    pub server: SocketAddr,
+    pub server: String,
 
     #[structopt(long = "templates", default_value = "assets/templates", parse(from_os_str))]
     /// The path to the templates, relative to the working directory
@@ -101,7 +101,7 @@ fn run() -> Result<()> {
         .init();
 
     debug!("Spawning worker thread");
-    let worker = worker::spawn(opts.token, opts.server.to_string())
+    let worker = worker::spawn(opts.token, opts.server)
         .chain_err(|| "Failed to create status worker")?;
 
     let mut router = Router::new();
