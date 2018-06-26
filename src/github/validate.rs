@@ -50,10 +50,9 @@ pub fn pull_request(job: &worker::PullRequestJob, client: &Github) -> Result<Vec
 
     let mut failures = Vec::new();
     let input = pr.into();
-    for rule in repo.rules
-        .iter()
-        .filter(|rule| !exemptions.contains(&rule.name))
-    {
+    for rule in repo.rules.iter().filter(|rule| {
+        !exemptions.contains(&rule.name) && !exemptions.contains(&String::from("all"))
+    }) {
         let result = expr::eval(&rule.expression, &input).chain_err(|| {
             format!(
                 r#"Failed to run "{}" from "{}/{}""#,
